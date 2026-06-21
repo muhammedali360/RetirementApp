@@ -87,13 +87,15 @@ Returns are drawn from a **log-normal** distribution.
 
 | Input | Description |
 |-------|-------------|
-| **Include Social Security** | Whether SS offsets spending from your claim age |
+| **Include Social Security** | Whether SS offsets spending from your claim age onward (the offset rises each year with a COLA) |
 | **Claim age** | 62, 67, or 70 |
 | **Years worked so far** | Work history before today; used for SS and career-years planning |
 
-Benefit scales with years worked (capped at 35) and claim age (±3% per year relative to age 67). The model default max benefit is **$24,000**/yr at full work history and age-67 claim.
+Benefit scales with years worked (capped at 35) and claim age. The claim-age adjustment approximates the SSA schedule: **+8% per year** of delayed credits from 67 up to 70 (about +24% at 70), and early-claiming reductions of roughly **6.67% per year** for the first three years before 67 and **5% per year** earlier (about −30% at 62). It is still a simplification — actual benefits depend on your full earnings record and birth-year full-retirement age. The model default max benefit is **$24,000**/yr at full work history and age-67 claim.
 
-Spending grows with inflation from your retirement year onward. With advanced mode on, you can also set a **lower spending after 75 (%)** reduction (0% = flat spending).
+Once you claim, the SS benefit **offsets spending each year** and is inflated by a cost-of-living adjustment (COLA) equal to the inflation rate, so its real value stays constant rather than eroding over retirement.
+
+Spending grows with inflation from your retirement year onward. **Annual savings (contributions) are flat in nominal terms** — they do not grow year to year — so in real terms your contributions decline slightly before retirement. With advanced mode on, you can also set a **lower spending after 75 (%)** reduction (0% = flat spending).
 
 #### Save and load scenarios
 
@@ -226,7 +228,8 @@ pdf_bytes = generate_report_bytes(cfg, ages, probs, mean_return=0.06, volatility
 ## Model Notes
 
 - **Spending** uses one annual amount with optional reduction after age 75; grows with inflation from retirement onward
-- **Social Security** can be toggled off; when on, benefit scales with years worked (capped at 35) and claim age (62 / 67 / 70); default max benefit is $24,000/yr
+- **Contributions** (annual savings) are flat nominal until retirement — they do not grow with inflation, so their real value declines modestly over the accumulation phase
+- **Social Security** can be toggled off; when on, benefit scales with years worked (capped at 35) and claim age (62 / 67 / 70). The claim-age adjustment approximates SSA rules (+8%/yr delayed credits to 70; ≈−30% at 62) rather than a flat ±3%/yr, and the benefit receives an inflation COLA once claimed so its real offset stays constant. Default max benefit is $24,000/yr
 - **Success** = portfolio stays positive through your planning horizon (default age 100)
 - **Safe retirement range** is evaluated from current age through `min(85, planning horizon)`
 - **Returns** use a log-normal distribution (matches typical equity return modeling)

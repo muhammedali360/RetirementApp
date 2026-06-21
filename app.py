@@ -10,6 +10,7 @@ import streamlit as st
 from matplotlib.ticker import FuncFormatter
 
 from model import (
+    MODEL_CFG_FIELDS,
     compute_curve,
     compute_mc_net_worth_fan,
     find_min_years_worked,
@@ -764,7 +765,10 @@ def show_section(title, description):
 
 
 def cfg_cache_key(cfg):
-    return json.dumps(cfg, sort_keys=True)
+    # Key on only the model-relevant fields so UI-only toggles (e.g.
+    # show_real_values, advanced_mode, active_profile) don't bust the cache.
+    model_cfg = {k: cfg[k] for k in MODEL_CFG_FIELDS if k in cfg}
+    return json.dumps(model_cfg, sort_keys=True)
 
 
 @st.cache_data(show_spinner=False)
