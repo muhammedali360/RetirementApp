@@ -1,0 +1,26 @@
+# Personal scenario data (portfolio, spending, saved plans)
+scenarios.json
+saved_scenarios.json
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit-start.log
+
+# Matplotlib cache
+.mplcache/
+
+# Generated exports / local dev artifacts
+*.pdf
+test_curve.png
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
