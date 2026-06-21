@@ -1,6 +1,28 @@
 import numpy as np
 
 DEFAULT_SS_MAX_BENEFIT = 24_000
+SS_FULL_RETIREMENT_AGE = 67
+
+# Config fields that actually affect the simulation / report output. The Monte
+# Carlo cache key is derived from only these so that toggling UI-only state
+# (e.g. show_real_values, advanced_mode, active_profile) does not force a
+# re-run — the fan already returns both nominal and real series.
+MODEL_CFG_FIELDS = (
+    "annual_contribution",
+    "annual_spending",
+    "current_age",
+    "include_social_security",
+    "inflation_rate",
+    "max_age",
+    "social_security_claim_age",
+    "social_security_start_age",
+    "spending_reduction_after_75",
+    "spending_under_75",
+    "ss_max_benefit",
+    "starting_amount",
+    "trials",
+    "years_already_worked",
+)
 
 
 # -------------------------
@@ -27,15 +49,33 @@ def get_spending(age, cfg):
 # -------------------------
 # SOCIAL SECURITY
 # -------------------------
+def ss_claim_adjustment(claim_age):
+    """Benefit multiplier relative to the full-retirement-age (67) benefit.
+
+    Approximates the SSA schedule rather than a flat +/-3%/yr:
+      - Delayed-retirement credits of +8%/yr from 67, capped at age 70 (+24%).
+      - Early-claiming reductions of ~6.67%/yr for the first 3 years before 67
+        and ~5%/yr earlier, bottoming out near -30% at age 62.
+    Claim ages outside 62-70 are clamped to that range.
+    """
+    claim_age = min(max(claim_age, 62), 70)
+    if claim_age >= SS_FULL_RETIREMENT_AGE:
+        return 1.0 + 0.08 * (claim_age - SS_FULL_RETIREMENT_AGE)
+    early_years = SS_FULL_RETIREMENT_AGE - claim_age
+    first_three = min(early_years, 3)
+    beyond_three = max(early_years - 3, 0)
+    return 1.0 - 0.0667 * first_three - 0.05 * beyond_three
+
+
 def compute_social_security(years_worked, claim_age, max_benefit=DEFAULT_SS_MAX_BENEFIT):
     base = max_benefit * min(years_worked, 35) / 35
-    return base * (1 + 0.03 * (claim_age - 67))
+    return base * ss_claim_adjustment(claim_age)
 
 
 def compute_social_security_batch(years_worked, claim_age, max_benefit=DEFAULT_SS_MAX_BENEFIT):
     years_worked = np.asarray(years_worked, dtype=np.float64)
     base = max_benefit * np.minimum(years_worked, 35) / 35
-    return base * (1 + 0.03 * (claim_age - 67))
+    return base * ss_claim_adjustment(claim_age)
 
 
 def social_security_income(cfg, years_worked):
@@ -85,10 +125,13 @@ def _spending_matrix(retirement_ages, current_age, max_age, inflation_rate, ss_s
     spending = np.where(retired, spending, 0.0)
 
     if ss_start_age is not None:
-        ss_mask = calendar_ages >= ss_start_age
-        spending[:, ss_mask] = np.maximum(
-            spending[:, ss_mask] - ss_incomes[:, None], 0.0,
-        )
+        # Social Security has a cost-of-living adjustment, so the benefit
+        # inflates from the retirement year just like spending does. This keeps
+        # the real value of the SS offset constant instead of letting a fixed
+        # nominal amount erode over decades of retirement.
+        ss_active = calendar_ages[None, :] >= ss_start_age
+        ss_offset = ss_incomes[:, None] * ((1 + inflation_rate) ** yrs_since)
+        spending = np.maximum(spending - np.where(ss_active, ss_offset, 0.0), 0.0)
     return spending
 
 
@@ -276,11 +319,14 @@ def simulate_net_worth(cfg, retirement_age, return_rate):
     ss_income = social_security_income(cfg, years_worked)
     ss_start = social_security_start_age(cfg)
 
+    spending_array = build_spending_array(cfg)
+
     age = current_age
     net_worth = cfg["starting_amount"]
     years = []
     nominal = []
     real = []
+    depleted_at = None
 
     while age <= max_age:
         if age < retirement_age:
@@ -289,26 +335,32 @@ def simulate_net_worth(cfg, retirement_age, return_rate):
         net_worth *= (1 + return_rate)
 
         if age >= retirement_age:
-            base = get_spending(age, cfg)
+            base = spending_array[age]
             yrs = age - retirement_age
             spending = base * ((1 + cfg["inflation_rate"]) ** yrs)
 
             if ss_start is not None and age >= ss_start:
-                spending -= ss_income
+                # SS benefit inflates with a COLA, matching the spending path.
+                spending -= ss_income * ((1 + cfg["inflation_rate"]) ** yrs)
                 spending = max(0, spending)
 
             net_worth -= spending
-            if net_worth <= 0:
-                return None, [], [], []
 
         real_nw = net_worth / ((1 + cfg["inflation_rate"]) ** (age - current_age))
         years.append(age)
         nominal.append(net_worth)
         real.append(real_nw)
 
+        if age >= retirement_age and net_worth <= 0:
+            # Funds depleted: record the depletion point and stop so the
+            # chart can still show where the path ran out.
+            depleted_at = age
+            break
+
         age += 1
 
-    return retirement_age, years, nominal, real
+    fully_funded_age = retirement_age if depleted_at is None else None
+    return fully_funded_age, years, nominal, real
 
 
 def compute_mc_net_worth_fan(cfg, retirement_age, mean_return, volatility, seed=None):

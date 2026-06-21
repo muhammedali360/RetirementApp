@@ -1,0 +1,286 @@
+import numpy as np
+import pytest
+
+import model
+
+
+# -------------------------
+# SPENDING
+# -------------------------
+def test_annual_spending_prefers_annual_spending_key(cfg):
+    cfg["annual_spending"] = 123_456
+    assert model._annual_spending(cfg) == 123_456
+
+
+def test_annual_spending_falls_back_to_spending_under_75():
+    assert model._annual_spending({"spending_under_75": 90_000}) == 90_000
+
+
+def test_annual_spending_default():
+    assert model._annual_spending({}) == 200_000
+
+
+def test_build_spending_array_no_reduction(cfg):
+    cfg["annual_spending"] = 100_000
+    cfg["spending_reduction_after_75"] = 0.0
+    arr = model.build_spending_array(cfg)
+    assert arr.shape == (150,)
+    assert arr[40] == 100_000
+    assert arr[74] == 100_000
+    assert arr[75] == 100_000
+
+
+def test_build_spending_array_with_reduction(cfg):
+    cfg["annual_spending"] = 100_000
+    cfg["spending_reduction_after_75"] = 0.20
+    arr = model.build_spending_array(cfg)
+    assert arr[74] == 100_000
+    assert arr[75] == pytest.approx(80_000)
+    assert arr[120] == pytest.approx(80_000)
+
+
+def test_get_spending_matches_array(cfg):
+    cfg["annual_spending"] = 100_000
+    cfg["spending_reduction_after_75"] = 0.10
+    assert model.get_spending(70, cfg) == 100_000
+    assert model.get_spending(80, cfg) == pytest.approx(90_000)
+
+
+# -------------------------
+# SOCIAL SECURITY
+# -------------------------
+def test_compute_social_security_full_career_at_67():
+    # 35+ years worked, claim at 67 => exactly max benefit
+    assert model.compute_social_security(35, 67, max_benefit=24_000) == pytest.approx(24_000)
+    assert model.compute_social_security(40, 67, max_benefit=24_000) == pytest.approx(24_000)
+
+
+def test_compute_social_security_partial_career_scales_linearly():
+    # half the 35-year cap
+    assert model.compute_social_security(17.5, 67, max_benefit=24_000) == pytest.approx(12_000)
+
+
+def test_compute_social_security_claim_age_adjustment():
+    # SSA-style schedule: +8%/yr delayed credits past 67 (capped at 70),
+    # -6.67%/yr for the first 3 years of early claiming.
+    later = model.compute_social_security(35, 70, max_benefit=24_000)
+    earlier = model.compute_social_security(35, 64, max_benefit=24_000)
+    assert later == pytest.approx(24_000 * (1 + 0.08 * 3))
+    assert earlier == pytest.approx(24_000 * (1 - 0.0667 * 3))
+
+
+def test_ss_claim_adjustment_full_retirement_age_is_unity():
+    assert model.ss_claim_adjustment(67) == pytest.approx(1.0)
+
+
+def test_ss_claim_adjustment_early_beyond_three_years():
+    # 5 years early: 3 years at -6.67% + 2 years at -5%.
+    expected = 1.0 - 0.0667 * 3 - 0.05 * 2
+    assert model.ss_claim_adjustment(62) == pytest.approx(expected)
+
+
+def test_ss_claim_adjustment_clamps_outside_62_to_70():
+    assert model.ss_claim_adjustment(75) == model.ss_claim_adjustment(70)
+    assert model.ss_claim_adjustment(55) == model.ss_claim_adjustment(62)
+
+
+def test_social_security_batch_matches_scalar():
+    years = [0, 10, 35, 40]
+    batch = model.compute_social_security_batch(years, 70, max_benefit=24_000)
+    scalar = [model.compute_social_security(y, 70, max_benefit=24_000) for y in years]
+    np.testing.assert_allclose(batch, scalar)
+
+
+def test_social_security_income_disabled(cfg):
+    cfg["include_social_security"] = False
+    assert model.social_security_income(cfg, 35) == 0.0
+
+
+def test_social_security_income_batch_disabled_returns_zeros(cfg):
+    cfg["include_social_security"] = False
+    out = model.social_security_income_batch(cfg, [10, 20, 30])
+    np.testing.assert_array_equal(out, np.zeros(3))
+
+
+def test_social_security_start_age(cfg):
+    assert model.social_security_start_age(cfg) == 67
+    cfg["include_social_security"] = False
+    assert model.social_security_start_age(cfg) is None
+
+
+def test_social_security_claim_age_fallback():
+    cfg = {"include_social_security": True, "social_security_start_age": 70}
+    assert model.social_security_start_age(cfg) == 70
+    assert model.social_security_income(cfg, 35) == pytest.approx(24_000 * (1 + 0.08 * 3))
+
+
+# -------------------------
+# RETURNS
+# -------------------------
+def test_generate_returns_shape():
+    r = model.generate_returns(0.06, 0.12, trials=100, n_years=30, seed=1)
+    assert r.shape == (100, 30)
+
+
+def test_generate_returns_seed_reproducible():
+    a = model.generate_returns(0.06, 0.12, 50, 20, seed=42)
+    b = model.generate_returns(0.06, 0.12, 50, 20, seed=42)
+    np.testing.assert_array_equal(a, b)
+
+
+def test_generate_returns_different_seeds_differ():
+    a = model.generate_returns(0.06, 0.12, 50, 20, seed=1)
+    b = model.generate_returns(0.06, 0.12, 50, 20, seed=2)
+    assert not np.array_equal(a, b)
+
+
+def test_generate_returns_mean_approximates_arithmetic_mean():
+    # Log-normal calibrated so arithmetic mean of simple returns ~= mean_return.
+    r = model.generate_returns(0.06, 0.12, trials=200_000, n_years=1, seed=7)
+    assert r.mean() == pytest.approx(0.06, abs=0.01)
+
+
+def test_generate_returns_zero_volatility_is_constant():
+    r = model.generate_returns(0.05, 0.0, trials=10, n_years=5, seed=0)
+    np.testing.assert_allclose(r, 0.05)
+
+
+# -------------------------
+# MONTE CARLO
+# -------------------------
+def test_simulate_batch_returns_probability(cfg):
+    p = model.simulate_batch(cfg, 60, 0.06, 0.12, ss_income=20_000, trials=cfg["trials"], seed=1)
+    assert 0.0 <= p <= 1.0
+
+
+def test_simulate_batch_seed_reproducible(cfg):
+    kw = dict(ss_income=20_000, trials=cfg["trials"], seed=3)
+    p1 = model.simulate_batch(cfg, 60, 0.06, 0.12, **kw)
+    p2 = model.simulate_batch(cfg, 60, 0.06, 0.12, **kw)
+    assert p1 == p2
+
+
+def test_simulate_batch_more_starting_money_helps(cfg):
+    poor = dict(cfg, starting_amount=200_000)
+    rich = dict(cfg, starting_amount=5_000_000)
+    p_poor = model.simulate_batch(poor, 55, 0.06, 0.12, ss_income=20_000, trials=cfg["trials"], seed=5)
+    p_rich = model.simulate_batch(rich, 55, 0.06, 0.12, ss_income=20_000, trials=cfg["trials"], seed=5)
+    assert p_rich > p_poor
+
+
+def test_simulate_batch_later_retirement_helps(cfg):
+    early = model.simulate_batch(cfg, 50, 0.06, 0.12, ss_income=20_000, trials=cfg["trials"], seed=9)
+    late = model.simulate_batch(cfg, 65, 0.06, 0.12, ss_income=20_000, trials=cfg["trials"], seed=9)
+    assert late >= early
+
+
+# -------------------------
+# CURVE
+# -------------------------
+def test_compute_curve_shapes(cfg):
+    ages, probs = model.compute_curve(cfg, range(50, 66), 0.06, 0.12, seed=11)
+    assert len(ages) == len(probs) == 16
+    assert np.all((probs >= 0) & (probs <= 1))
+
+
+def test_compute_curve_monotonic_in_retirement_age(cfg):
+    # Retiring later should never reduce success probability.
+    ages, probs = model.compute_curve(cfg, range(45, 71), 0.06, 0.12, seed=13)
+    assert np.all(np.diff(probs) >= -1e-9)
+
+
+def test_compute_curve_matches_simulate_batch_single_age(cfg):
+    # Both paths build the same returns from the same seed, so a single-age
+    # curve point must equal the corresponding simulate_batch call.
+    age = 60
+    years_worked = cfg["years_already_worked"] + (age - cfg["current_age"])
+    ss_income = model.social_security_income(cfg, years_worked)
+
+    ages, probs = model.compute_curve(cfg, [age], 0.06, 0.12, seed=21)
+    batch = model.simulate_batch(
+        cfg, age, 0.06, 0.12, ss_income=ss_income, trials=cfg["trials"], seed=21,
+    )
+    assert probs[0] == pytest.approx(batch)
+
+
+# -------------------------
+# PERCENTILE PATHS
+# -------------------------
+def test_simulate_percentile_paths_ordering(cfg):
+    ages, pct = model.simulate_percentile_paths(cfg, 60, 0.06, 0.12, seed=17)
+    assert len(ages) == cfg["max_age"] - cfg["current_age"] + 1
+    # 10th <= 50th <= 90th percentile at every age
+    assert np.all(pct[10] <= pct[50] + 1e-6)
+    assert np.all(pct[50] <= pct[90] + 1e-6)
+
+
+# -------------------------
+# OPTIMIZER
+# -------------------------
+def test_find_min_years_worked_returns_int_or_none(cfg):
+    result = model.find_min_years_worked(cfg, 60, 0.06, 0.12, target=0.95, seed=23)
+    assert result is None or isinstance(result, int)
+
+
+def test_find_min_years_worked_meets_target(cfg):
+    target = 0.90
+    result = model.find_min_years_worked(cfg, 62, 0.06, 0.12, target=target, seed=29)
+    assert result is not None
+    # At the returned career length the success probability meets the target,
+    # and one fewer year does not (it is the *minimum*).
+    p_at = model._success_at_career_years(cfg, 62, result, 0.06, 0.12, seed=29)
+    assert p_at >= target
+    if result > cfg["years_already_worked"]:
+        p_below = model._success_at_career_years(cfg, 62, result - 1, 0.06, 0.12, seed=29)
+        assert p_below < target
+
+
+def test_find_min_years_worked_impossible_target(cfg):
+    broke = dict(cfg, starting_amount=0, annual_contribution=0, annual_spending=500_000)
+    result = model.find_min_years_worked(broke, 45, 0.06, 0.12, target=0.95, seed=2)
+    assert result is None
+
+
+# -------------------------
+# DETERMINISTIC NET WORTH
+# -------------------------
+def test_simulate_net_worth_success(cfg):
+    age, years, nominal, real = model.simulate_net_worth(cfg, 60, 0.06)
+    assert age == 60
+    assert years[0] == cfg["current_age"]
+    assert years[-1] == cfg["max_age"]
+    assert len(years) == len(nominal) == len(real)
+    # Real values are nominal discounted by inflation, so smaller for later years.
+    assert real[-1] < nominal[-1]
+
+
+def test_simulate_net_worth_depletion_returns_path_to_depletion(cfg):
+    broke = dict(cfg, starting_amount=100_000, annual_contribution=0, annual_spending=400_000)
+    age, years, nominal, real = model.simulate_net_worth(broke, 41, 0.0)
+    # No fully-funded age, but the path runs up to the depletion point so the
+    # chart can still show where it ran out.
+    assert age is None
+    assert years and len(years) == len(nominal) == len(real)
+    assert nominal[-1] <= 0
+    # Stops at depletion rather than continuing to max_age.
+    assert years[-1] < broke["max_age"]
+
+
+def test_simulate_net_worth_grows_before_retirement(cfg):
+    no_spend = dict(cfg, current_age=40, max_age=60)
+    _, years, nominal, _ = model.simulate_net_worth(no_spend, 60, 0.06)
+    # Pure accumulation phase: nominal net worth strictly increases each year.
+    assert all(b > a for a, b in zip(nominal, nominal[1:]))
+
+
+# -------------------------
+# MC NET WORTH FAN
+# -------------------------
+def test_compute_mc_net_worth_fan_real_below_nominal(cfg):
+    ages, pct, real = model.compute_mc_net_worth_fan(cfg, 60, 0.06, 0.12, seed=31)
+    assert set(pct.keys()) == {10, 50, 90}
+    assert set(real.keys()) == {10, 50, 90}
+    # At the first year inflation discount factor is 1, so real == nominal there.
+    assert real[50][0] == pytest.approx(pct[50][0])
+    # Later, real is discounted below nominal (where there is wealth left).
+    assert real[90][-1] <= pct[90][-1] + 1e-6
