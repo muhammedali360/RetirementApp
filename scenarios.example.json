@@ -1,0 +1,22 @@
+{
+  "last": {
+    "current_age": 35,
+    "starting_amount": 250000,
+    "annual_contribution": 30000,
+    "max_age": 100,
+    "inflation_rate": 0.03,
+    "include_social_security": true,
+    "social_security_claim_age": 67,
+    "years_already_worked": 12,
+    "trials": 2000,
+    "annual_spending": 80000,
+    "spending_reduction_after_75": 0.15,
+    "mean_return": 0.06,
+    "volatility": 0.12,
+    "target_retirement_age": 65,
+    "advanced_mode": false,
+    "active_profile": "Mid",
+    "show_real_values": false
+  },
+  "saved": []
+}
