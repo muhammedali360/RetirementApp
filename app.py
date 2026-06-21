@@ -19,7 +19,6 @@ from model import (
 )
 from report import (
     build_executive_summary,
-    build_plan_narrative,
     delta_pts,
     generate_report_bytes,
     pick_best_levers,
@@ -273,19 +272,6 @@ def compute_withdrawal_rate(cfg, retirement_age, mean_return):
     return spending / portfolio
 
 
-def build_insight(target_prob, target_age, on_track, withdrawal_rate, ranges, years_until, levers=None):
-    return build_plan_narrative(
-        target_prob,
-        target_age,
-        on_track,
-        withdrawal_rate,
-        ranges,
-        years_until,
-        levers=levers,
-        html=True,
-    )
-
-
 def inject_custom_css():
     if CUSTOM_CSS.exists():
         st.markdown(f"<style>{CUSTOM_CSS.read_text()}</style>", unsafe_allow_html=True)
@@ -336,14 +322,41 @@ def format_delta_arrow(delta):
     return f"▼ {pts:+d} pts", "down"
 
 
-def render_insight(text, status="neutral"):
+def build_verdict(target_prob, target_age, max_age, ranges):
+    """One plain-English sentence — the lead, before any chart."""
+    if target_prob is None:
+        return "Not enough data to estimate your plan’s success."
+    headline = (
+        f"Retiring at {target_age} has a {target_prob * 100:.0f}% chance "
+        f"of lasting to {max_age}."
+    )
+    if ranges:
+        headline += f" Earliest safe age: {ranges[0][0]}."
+    return headline
+
+
+def build_verdict_subline(target_prob, best_levers):
+    if not best_levers:
+        return None
+    top = best_levers[0]
+    pts = delta_pts(top.get("delta"))
+    if pts in (None, 0):
+        return None
+    at_target = target_prob is not None and target_prob >= 0.95
+    prefix = "Optional margin" if at_target else "Best lever"
+    return f"{prefix}: {top['Change']} ({pts:+d} pts)."
+
+
+def render_verdict(headline, subline, status="neutral"):
+    sub_html = f'<p class="verdict-sub">{subline}</p>' if subline else ""
     st.markdown(
-        f'<div class="insight-card">'
+        f'<div class="verdict-card">'
         f'<div class="signal-header">'
         f'<span class="signal-dot {status}"></span>'
-        f'<span class="signal-label">Signal</span>'
+        f'<span class="signal-label">Verdict</span>'
         f"</div>"
-        f"<p>{text}</p></div>",
+        f'<p class="verdict-headline">{headline}</p>'
+        f"{sub_html}</div>",
         unsafe_allow_html=True,
     )
 
@@ -577,27 +590,6 @@ def render_chart_with_download(fig, *, file_name, label):
         """,
         unsafe_allow_html=True,
     )
-
-
-def format_safe_ranges(ranges, max_eval_age):
-    if not ranges:
-        return None
-
-    if len(ranges) == 1:
-        start, end = ranges[0]
-        if start == end:
-            return f"Only age **{start}** meets the ≥95% threshold"
-        if end >= max_eval_age - 1:
-            return (
-                f"Earliest retirement age with ≥95% success: **{start}** "
-                f"(all later ages through {max_eval_age} are also safe)"
-            )
-        return f"Ages **{start}–{end}** meet the ≥95% threshold"
-
-    parts = []
-    for start, end in ranges:
-        parts.append(str(start) if start == end else f"{start}–{end}")
-    return f"Safe retirement ages: {', '.join(parts)}"
 
 
 def _load_legacy_saved():
@@ -909,7 +901,7 @@ def plot_success_curve(
             )
     ax.set_xlabel("Retirement Age")
     ax.set_ylabel("Success Probability")
-    ax.set_title("Success Probability Curve · Monte Carlo")
+    ax.set_title("Will your money last if you retire at this age?")
     ax.set_ylim(0, 1.02)
     ax.grid(True, alpha=0.22)
     ax.legend(loc="lower right", fontsize=8, frameon=True)
@@ -1273,7 +1265,6 @@ with st.spinner(f"Running {trial_count:,} Monte Carlo trials…"):
     )
 
 ranges = safe_retirement_ranges(ages, probs)
-summary = format_safe_ranges(ranges, max_eval_age)
 target_prob = prob_at_age(ages, probs, target_age)
 years_until_retirement, baseline_career_years = planned_career_years(cfg, target_age)
 on_track = min_years is not None and baseline_career_years >= min_years
@@ -1285,13 +1276,14 @@ what_if_rows = run_what_if_scenarios(
     cfg, target_prob, target_age, mean_return, volatility,
 )
 best_levers = pick_best_levers(what_if_rows)
-insight = build_insight(
-    target_prob, target_age, on_track, withdrawal_rate, ranges, years_until_retirement,
-    levers=best_levers,
-)
 executive_summary = build_executive_summary(
     target_prob, target_age, on_track, withdrawal_rate, ranges, years_until_retirement,
     levers=best_levers,
+)
+
+optimizer_lines = build_optimizer_lines(
+    target_age, min_years, baseline_career_years,
+    cfg["years_already_worked"], years_until_retirement,
 )
 
 with main_body.container():
@@ -1307,7 +1299,11 @@ with main_body.container():
     for warning in input_warnings:
         st.warning(warning)
 
-    render_insight(insight, status=insight_status(target_prob, on_track))
+    render_verdict(
+        build_verdict(target_prob, target_age, cfg["max_age"], ranges),
+        build_verdict_subline(target_prob, best_levers),
+        status=insight_status(target_prob, on_track),
+    )
 
     render_kpi_row(
         target_age=target_age,
@@ -1316,90 +1312,98 @@ with main_body.container():
         withdrawal_rate=withdrawal_rate,
     )
 
-    show_section(
-        "Success probability curve",
-        "Each point is the chance your portfolio stays funded through your planning horizon "
-        "if you retire at that age. The shaded band marks ≥95% success.",
-    )
-    chart_end_age = st.slider(
-        "Chart ends at age",
-        min_value=start_age,
-        max_value=max_eval_age,
-        value=default_end_age,
-        help="Zoom the success curve — left edge is always your current age.",
-    )
-    earliest_safe = ranges[0][0] if ranges else None
-    success_fig = plot_success_curve(
-        ages, probs, start_age, chart_end_age, cfg["current_age"], target_age,
-        earliest_safe_age=earliest_safe,
-    )
-    render_chart_with_download(
-        success_fig,
-        file_name="success_curve.png",
-        label="Download chart PNG",
+    tab_plan, tab_whatif, tab_compare, tab_export = st.tabs(
+        ["Plan", "What-if", "Compare", "Export"]
     )
 
-    if summary:
-        st.success(summary)
-        ss_age = social_security_start_age(cfg)
-        earliest = ranges[0][0]
-        if ss_age is not None and earliest > cfg["current_age"] and earliest == ss_age:
-            st.caption(
-                f"Success jumps at age {earliest} because Social Security offsets spending "
-                f"from that age onward."
-            )
-    else:
-        st.error("No retirement age reaches ≥95% success with these inputs.")
-
-    with st.expander("Sequence-of-returns risk", expanded=True):
+    with tab_plan:
         show_section(
-            "Portfolio paths at your target age",
-            f"Monte Carlo paths if you retire at age {target_age}. "
-            "Early adverse markets can leave you with far less than the median path. "
-            f"The green line shows a deterministic path at your expected return ({mean_return * 100:.1f}%) "
-            "with no volatility.",
+            "Success probability curve",
+            "Each point is the chance your portfolio stays funded through your planning "
+            "horizon if you retire at that age. The shaded band marks ≥95% success.",
         )
-        show_real = st.toggle(
-            "Adjust for inflation",
-            value=bool(cfg.get("show_real_values", False)),
-            help="Show portfolio values in today's dollars instead of nominal dollars.",
+        chart_end_age = st.slider(
+            "Chart ends at age",
+            min_value=start_age,
+            max_value=max_eval_age,
+            value=default_end_age,
+            help="Zoom the success curve — left edge is always your current age.",
         )
-        cfg["show_real_values"] = show_real
-        fan_data = fan_real if show_real else fan_nominal
-        det_values = det_real if show_real else det_nominal
-        det_overlay = (det_years, det_values, det_label) if det_years else None
-        value_label = "Real" if show_real else "Nominal"
-        fan_fig = plot_fan_chart(
-            fan_ages,
-            fan_data,
-            f"{value_label} portfolio · retire @ {target_age}",
-            real_values=show_real,
-            det_overlay=det_overlay,
+        earliest_safe = ranges[0][0] if ranges else None
+        success_fig = plot_success_curve(
+            ages, probs, start_age, chart_end_age, cfg["current_age"], target_age,
+            earliest_safe_age=earliest_safe,
         )
         render_chart_with_download(
-            fan_fig,
-            file_name="portfolio_paths.png",
+            success_fig,
+            file_name="success_curve.png",
             label="Download chart PNG",
         )
-        if det_overlay is None:
-            st.caption(
-                f"The fixed {mean_return * 100:.1f}% return path depletes before your planning horizon — "
-                "no overlay shown."
+
+        if ranges:
+            ss_age = social_security_start_age(cfg)
+            earliest = ranges[0][0]
+            if ss_age is not None and earliest > cfg["current_age"] and earliest == ss_age:
+                st.caption(
+                    f"Success jumps at age {earliest} because Social Security offsets "
+                    "spending from that age onward."
+                )
+        else:
+            st.error("No retirement age reaches ≥95% success with these inputs.")
+
+        with st.expander("Sequence-of-returns risk", expanded=True):
+            show_section(
+                "Portfolio paths at your target age",
+                f"Monte Carlo paths if you retire at age {target_age}. "
+                "Early adverse markets can leave you with far less than the median path. "
+                f"The green line shows a deterministic path at your expected return "
+                f"({mean_return * 100:.1f}%) with no volatility.",
             )
+            show_real = st.toggle(
+                "Adjust for inflation",
+                value=bool(cfg.get("show_real_values", False)),
+                help="Show portfolio values in today's dollars instead of nominal dollars.",
+            )
+            cfg["show_real_values"] = show_real
+            fan_data = fan_real if show_real else fan_nominal
+            det_values = det_real if show_real else det_nominal
+            det_overlay = (det_years, det_values, det_label) if det_years else None
+            fan_fig = plot_fan_chart(
+                fan_ages,
+                fan_data,
+                f"What might your portfolio be worth if you retire at {target_age}?",
+                real_values=show_real,
+                det_overlay=det_overlay,
+            )
+            render_chart_with_download(
+                fan_fig,
+                file_name="portfolio_paths.png",
+                label="Download chart PNG",
+            )
+            if det_overlay is None:
+                st.caption(
+                    f"The fixed {mean_return * 100:.1f}% return path depletes before your "
+                    "planning horizon — no overlay shown."
+                )
 
-    render_career_years_section(
-        cfg=cfg,
-        target_age=target_age,
-        baseline_career_years=baseline_career_years,
-        min_years=min_years,
-        on_track=on_track,
-    )
+        render_career_years_section(
+            cfg=cfg,
+            target_age=target_age,
+            baseline_career_years=baseline_career_years,
+            min_years=min_years,
+            on_track=on_track,
+        )
 
-    with st.expander("What if", expanded=False):
+        st.caption(
+            f"Based on {trial_count:,} Monte Carlo trials per retirement age. "
+            "Results are cached — rerunning with the same inputs is fast."
+        )
+
+    with tab_whatif:
         show_section(
             "What-if scenarios",
-            "See how small changes to savings, spending, or retirement age affect your success rate "
-            "at your target — without editing the sidebar.",
+            "See how small changes to savings, spending, or retirement age affect your "
+            "success rate at your target — without editing the sidebar.",
         )
         applied = render_what_if_table(what_if_rows, best_levers)
         if applied is not None:
@@ -1411,7 +1415,7 @@ with main_body.container():
             "Click Apply to load a scenario into the sidebar."
         )
 
-    with st.expander("Compare scenarios", expanded=False):
+    with tab_compare:
         show_section(
             "Scenario comparison",
             "Overlay saved scenarios or profile presets on your current plan's success curve.",
@@ -1453,40 +1457,34 @@ with main_body.container():
         else:
             st.info("Select a saved scenario or preset above to compare.")
 
-    st.caption(
-        f"Based on {trial_count:,} Monte Carlo trials per retirement age. "
-        "Results are cached — rerunning with the same inputs is fast."
-    )
+    with tab_export:
+        show_section(
+            "Export your plan",
+            "Download your current inputs as JSON, or a full PDF report with charts and summary.",
+        )
+        col_dl1, col_dl2 = st.columns(2)
+        with col_dl1:
+            st.download_button(
+                "Download scenario JSON",
+                json.dumps(cfg, indent=2),
+                file_name="scenario.json",
+                mime="application/json",
+            )
+        with col_dl2:
+            pdf_bytes = cached_report_bytes(
+                cfg_key,
+                json.dumps(ages),
+                json.dumps(probs),
+                mean_return,
+                volatility,
+                json.dumps(optimizer_lines),
+                executive_summary,
+            )
+            st.download_button(
+                "Download PDF report",
+                pdf_bytes,
+                file_name="retirement_report.pdf",
+                mime="application/pdf",
+            )
 
-    optimizer_lines = build_optimizer_lines(
-        target_age, min_years, baseline_career_years,
-        cfg["years_already_worked"], years_until_retirement,
-    )
     save_cfg(cfg)
-
-    st.divider()
-    st.markdown("**Export**")
-    col_dl1, col_dl2 = st.columns(2)
-    with col_dl1:
-        st.download_button(
-            "Download scenario JSON",
-            json.dumps(cfg, indent=2),
-            file_name="scenario.json",
-            mime="application/json",
-        )
-    with col_dl2:
-        pdf_bytes = cached_report_bytes(
-            cfg_key,
-            json.dumps(ages),
-            json.dumps(probs),
-            mean_return,
-            volatility,
-            json.dumps(optimizer_lines),
-            executive_summary,
-        )
-        st.download_button(
-            "Download PDF report",
-            pdf_bytes,
-            file_name="retirement_report.pdf",
-            mime="application/pdf",
-        )
