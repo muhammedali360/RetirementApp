@@ -220,7 +220,7 @@ PRESET_PROFILES = {
 
 GLOSSARY = {
     "Success rate": "Share of Monte Carlo trials where your portfolio stays positive through your planning horizon.",
-    "Earliest safe age": "First retirement age with ≥95% success, evaluated through age 85.",
+    "Earliest safe age": "The youngest retirement age (searched up to 85) whose success rate reaches ≥95% — where success means the portfolio lasts through your planning horizon.",
     "Withdrawal rate": "Annual spending divided by portfolio at retirement — the 4% rule targets ≤4%.",
     "Sequence-of-returns risk": "Bad market returns early in retirement can permanently reduce portfolio durability.",
     "Planning horizon": "The age through which the model checks whether your money lasts (default: 100).",
@@ -417,7 +417,7 @@ def render_kpi_row(
         <div class="kpi-sticky">
             <div class="kpi-grid">
                 <div class="kpi-card">
-                    <div class="kpi-label">Probability · age {target_age}</div>
+                    <div class="kpi-label">Success rate · age {target_age}</div>
                     <div class="kpi-value {prob_cls}">{prob_val}</div>
                 </div>
                 <div class="kpi-card">
@@ -500,7 +500,7 @@ def render_what_if_table(rows, best_levers):
     col_weights = [3.5, 2, 2, 1.5]
     header = st.columns(col_weights, vertical_alignment="center")
     header[0].markdown("**Scenario**")
-    header[1].markdown("**Probability @ target**")
+    header[1].markdown("**Success rate @ target**")
     header[2].markdown("**Change vs plan**")
     header[3].markdown("")
 
