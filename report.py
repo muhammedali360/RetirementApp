@@ -137,6 +137,12 @@ def _spending_summary(cfg):
     return f"${base:,.0f}/yr"
 
 
+def _strategy_summary(cfg):
+    if cfg.get("withdrawal_strategy") == "guardrails":
+        return "Smart spending (guardrails — flexes with the market)"
+    return "Fixed (inflation-adjusted)"
+
+
 def _ss_summary(cfg):
     if not cfg.get("include_social_security", True):
         return "Not included"
@@ -234,6 +240,7 @@ def _draw_report(
         f"Planning Horizon: age {cfg['max_age']}",
         f"Social Security: {_ss_summary(cfg)}",
         f"Spending: {_spending_summary(cfg)}",
+        f"Spending strategy: {_strategy_summary(cfg)}",
     ]
     for line in lines:
         c.drawString(50, y, line)

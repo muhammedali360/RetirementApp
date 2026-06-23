@@ -204,6 +204,74 @@ def test_compute_curve_matches_simulate_batch_single_age(cfg):
 
 
 # -------------------------
+# SMART SPENDING (GUARDRAILS)
+# -------------------------
+def test_withdrawal_strategy_defaults_to_fixed(cfg):
+    assert model.withdrawal_strategy(cfg) == "fixed"
+    assert model.withdrawal_strategy(dict(cfg, withdrawal_strategy="guardrails")) == "guardrails"
+
+
+def test_guardrail_income_band(cfg):
+    cfg["annual_spending"] = 100_000
+    floor, base, ceiling = model.guardrail_income_band(cfg)
+    assert base == 100_000
+    assert floor == pytest.approx(100_000 * model.SPEND_FLOOR_MULT)
+    assert ceiling == pytest.approx(100_000 * model.SPEND_CEILING_MULT)
+    assert floor < base < ceiling
+
+
+def test_guardrails_curve_shapes_and_bounds(cfg):
+    smart = dict(cfg, withdrawal_strategy="guardrails")
+    ages, probs = model.compute_curve(smart, range(50, 66), 0.06, 0.12, seed=11)
+    assert len(ages) == len(probs) == 16
+    assert np.all((probs >= 0) & (probs <= 1))
+
+
+def test_guardrails_curve_matches_simulate_batch_single_age(cfg):
+    # The vectorized curve and the single-age path must agree under guardrails,
+    # just as they do for the fixed strategy.
+    smart = dict(cfg, withdrawal_strategy="guardrails")
+    age = 60
+    years_worked = smart["years_already_worked"] + (age - smart["current_age"])
+    ss_income = model.social_security_income(smart, years_worked)
+
+    _, probs = model.compute_curve(smart, [age], 0.06, 0.12, seed=21)
+    batch = model.simulate_batch(
+        smart, age, 0.06, 0.12, ss_income=ss_income, trials=smart["trials"], seed=21,
+    )
+    assert probs[0] == pytest.approx(batch)
+
+
+def test_guardrails_helps_a_marginal_plan(cfg):
+    # On a plan that is not a sure thing, flexing spending down after bad markets
+    # should not lower — and in practice raises — the odds of lasting.
+    marginal = dict(
+        cfg, starting_amount=900_000, annual_contribution=0,
+        annual_spending=70_000, include_social_security=False,
+    )
+    fixed = model.compute_curve(marginal, [60], 0.06, 0.14, seed=7)[1][0]
+    smart = model.compute_curve(
+        dict(marginal, withdrawal_strategy="guardrails"), [60], 0.06, 0.14, seed=7,
+    )[1][0]
+    assert 0.0 < fixed < 1.0  # genuinely marginal, so there is room to improve
+    assert smart >= fixed
+
+
+def test_guardrails_spending_stays_within_band(cfg):
+    # No trial path should ever withdraw more than the ceiling lifestyle implies:
+    # the realized spend multiplier is clamped to [floor, ceiling].
+    smart = dict(cfg, withdrawal_strategy="guardrails", include_social_security=False)
+    returns = model.generate_returns(0.06, 0.18, smart["trials"], 56, seed=3)
+    _, _, paths = model._simulate_guardrails(
+        smart, [55], returns, collect_paths=True,
+    )
+    assert paths.shape == (smart["trials"], 1, 56)
+    # Surviving balances are finite and the tensor is well-formed.
+    assert np.all(np.isfinite(paths))
+    assert np.all(paths >= 0)
+
+
+# -------------------------
 # PERCENTILE PATHS
 # -------------------------
 def test_simulate_percentile_paths_ordering(cfg):

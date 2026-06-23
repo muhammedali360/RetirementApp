@@ -17,6 +17,7 @@ from model import (
     compute_mc_net_worth_fan,
     find_max_sustainable_spending,
     find_min_years_worked,
+    guardrail_income_band,
     simulate_net_worth,
     social_security_start_age,
 )
@@ -166,6 +167,7 @@ DEFAULT_CFG = {
     "advanced_mode": False,
     "active_profile": None,
     "show_real_values": False,
+    "withdrawal_strategy": "fixed",
 }
 
 PROFILE_ALIASES = {
@@ -466,8 +468,13 @@ def safe_spend_state(safe_spend, current_spend, target_age):
     )
 
 
-def render_safe_spend(safe_spend, current_spend, target_age, withdrawal_rate):
-    """Headline 'how much can I actually spend?' card — the inverse insight."""
+def render_safe_spend(safe_spend, current_spend, target_age, withdrawal_rate, band=None):
+    """Headline 'how much can I actually spend?' card — the inverse insight.
+
+    Under smart spending the sustainable answer is a base *plus* a flex band, so
+    `band` (floor, _base, ceiling) is folded in as a sub-line that straddles the
+    headline number instead of competing with it in a separate card.
+    """
     if safe_spend is None:
         return
     status, message = safe_spend_state(safe_spend, current_spend, target_age)
@@ -476,16 +483,27 @@ def render_safe_spend(safe_spend, current_spend, target_age, withdrawal_rate):
         if withdrawal_rate is not None
         else ""
     )
+    conf = f"{SUCCESS_THRESHOLD_PCT}% confidence"
+    band_html = ""
+    if band is not None:
+        floor, _base, ceiling = band
+        conf += " · smart"
+        band_html = (
+            f'<div class="safespend-band">Flexes '
+            f"{format_currency(floor)}–{format_currency(ceiling)}/yr "
+            "as markets move</div>"
+        )
     st.markdown(
         f'<div class="safespend-card {status}">'
         f'<div class="signal-header">'
         f'<span class="signal-dot {status}"></span>'
         f'<span class="signal-label">Sustainable spending</span>'
-        f'<span class="safespend-conf">{SUCCESS_THRESHOLD_PCT}% confidence</span>'
+        f'<span class="safespend-conf">{conf}</span>'
         f"</div>"
         f'<div class="safespend-value">{format_currency(safe_spend)}'
         f'<span class="safespend-unit">/yr</span></div>'
         f'<div class="safespend-sub">retiring at age {target_age}{wr_txt}</div>'
+        f"{band_html}"
         f'<div class="safespend-delta {status}">{message}</div>'
         f"</div>",
         unsafe_allow_html=True,
@@ -907,6 +925,8 @@ def plot_success_curve(
     current_age,
     highlight_age=None,
     earliest_safe_age=None,
+    overlay=None,
+    primary_label="Success probability",
 ):
     apply_chart_style()
     ages = np.asarray(ages)
@@ -924,7 +944,16 @@ def plot_success_curve(
         chart_ages, chart_probs, SUCCESS_THRESHOLD, where=chart_probs >= SUCCESS_THRESHOLD,
         color=THEME["success"], alpha=0.14, interpolate=True,
     )
-    _glow_line(ax, chart_ages, chart_probs, THEME["primary"], label="Success probability")
+    if overlay is not None:
+        ov_ages, ov_probs, ov_label = overlay
+        ov_ages = np.asarray(ov_ages)
+        ov_probs = np.asarray(ov_probs)
+        ov_mask = (ov_ages >= start_age) & (ov_ages <= end_age)
+        ax.plot(
+            ov_ages[ov_mask], ov_probs[ov_mask], linestyle="--",
+            color=THEME["muted"], linewidth=1.6, alpha=0.9, label=ov_label,
+        )
+    _glow_line(ax, chart_ages, chart_probs, THEME["primary"], label=primary_label)
     ax.axhline(SUCCESS_THRESHOLD, linestyle="--", color=THEME["threshold"], linewidth=1.0, label=f"{SUCCESS_THRESHOLD_PCT}% threshold")
     ax.axvline(current_age, linestyle=":", color=THEME["secondary"], alpha=0.7, linewidth=1.2, label="Current age")
     if highlight_age is not None:
@@ -1149,6 +1178,17 @@ with st.sidebar:
     )
     cfg["advanced_mode"] = advanced_mode
 
+    smart_spending = st.toggle(
+        "Smart spending",
+        value=(cfg.get("withdrawal_strategy", "fixed") == "guardrails"),
+        help=(
+            "Flex spending with the market — trim withdrawals after a downturn, "
+            "spend more after a strong run (Guyton-Klinger guardrails). Improves "
+            "the odds your money lasts versus a fixed inflation-only budget."
+        ),
+    )
+    cfg["withdrawal_strategy"] = "guardrails" if smart_spending else "fixed"
+
     with st.expander("Essentials", expanded=True):
         with st.form("essentials_form", border=False):
             essentials_age = st.number_input(
@@ -1336,6 +1376,22 @@ with st.spinner(f"Running {trial_count:,} Monte Carlo trials…"):
         json.dumps({"retirement_age": target_age, **model_args}),
     )
 
+smart_spending_on = cfg.get("withdrawal_strategy") == "guardrails"
+fixed_ages = fixed_probs = None
+if smart_spending_on:
+    # Same plan with a fixed inflation-only budget, for the success-curve overlay
+    # so the lift smart spending buys is visible side by side.
+    fixed_cfg = dict(cfg, withdrawal_strategy="fixed")
+    fixed_ages, fixed_probs = cached_model(
+        "curve",
+        cfg_cache_key(fixed_cfg),
+        json.dumps({
+            "age_start": cfg["current_age"],
+            "age_end": max_eval_age,
+            **model_args,
+        }),
+    )
+
 ranges = safe_retirement_ranges(ages, probs)
 target_prob = prob_at_age(ages, probs, target_age)
 years_until_retirement, baseline_career_years = planned_career_years(cfg, target_age)
@@ -1395,11 +1451,17 @@ with main_body.container():
     )
 
     with tab_plan:
+        spend_band = (
+            guardrail_income_band(cfg, base=safe_spend)
+            if smart_spending_on and safe_spend
+            else None
+        )
         render_safe_spend(
             safe_spend,
             cfg.get("annual_spending", 0),
             target_age,
             safe_spend_wr,
+            band=spend_band,
         )
 
         show_section(
@@ -1415,15 +1477,29 @@ with main_body.container():
             help="Zoom the success curve — left edge is always your current age.",
         )
         earliest_safe = ranges[0][0] if ranges else None
+        curve_overlay = (
+            (fixed_ages, fixed_probs, "Fixed spending")
+            if smart_spending_on and fixed_probs is not None
+            else None
+        )
         success_fig = plot_success_curve(
             ages, probs, start_age, chart_end_age, cfg["current_age"], target_age,
             earliest_safe_age=earliest_safe,
+            overlay=curve_overlay,
+            primary_label="Smart spending" if smart_spending_on else "Success probability",
         )
         render_chart_with_download(
             success_fig,
             file_name="success_curve.png",
             label="Download chart PNG",
         )
+
+        if curve_overlay is not None:
+            st.caption(
+                "The dashed line is the same plan with fixed inflation-only spending. "
+                "Smart spending lifts the odds by trimming withdrawals after market "
+                "downturns — at the cost of a leaner budget in those years."
+            )
 
         if ranges:
             ss_age = social_security_start_age(cfg)
