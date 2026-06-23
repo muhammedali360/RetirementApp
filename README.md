@@ -113,13 +113,14 @@ The main page shows, in order:
 2. **Input warnings** — e.g. withdrawal rate above 5%, target age not after current age, or very low savings with no contributions
 3. **Signal** — plain-language summary of your plan, including best what-if levers when relevant
 4. **KPIs** — success probability at target age, earliest safe age, and withdrawal rate at target age
-5. **Success probability curve** — Monte Carlo success vs. retirement age, with a **Chart ends at age** slider to zoom the x-axis and a **Download chart PNG** button
-6. **Safe-age summary** — message below the curve when any age reaches ≥90% success (with an SS note if the earliest safe age aligns with your claim age)
-7. **Sequence-of-returns risk** (expander) — Monte Carlo fan chart at your target retirement age, with **Adjust for inflation** toggle and **Download chart PNG**
-8. **Career years** — shown only when Social Security work history is a constraint (see section 5)
-9. **What if** (expander) — quick scenario changes without editing the sidebar
-10. **Compare scenarios** (expander) — overlay saved plans or profile presets
-11. **Export** — JSON config and PDF report
+5. **Sustainable spending** — the largest annual budget that still clears the success threshold at your target age, with its implied withdrawal rate and a status-aware delta vs. your plan (headroom when you can spend more, trim-to-target when you are over)
+6. **Success probability curve** — Monte Carlo success vs. retirement age, with a **Chart ends at age** slider to zoom the x-axis and a **Download chart PNG** button
+7. **Safe-age summary** — message below the curve when any age reaches ≥90% success (with an SS note if the earliest safe age aligns with your claim age)
+8. **Sequence-of-returns risk** (expander) — Monte Carlo fan chart at your target retirement age, with **Adjust for inflation** toggle and **Download chart PNG**
+9. **Career years** — shown only when Social Security work history is a constraint (see section 5)
+10. **What if** (expander) — quick scenario changes without editing the sidebar
+11. **Compare scenarios** (expander) — overlay saved plans or profile presets
+12. **Export** — JSON config and PDF report
 
 ### 3. Success curve
 

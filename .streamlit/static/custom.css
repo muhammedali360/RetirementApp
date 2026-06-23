@@ -286,6 +286,67 @@ html, body, [class*="css"] {
     font-size: 0.9em;
 }
 
+/* Sustainable spending card */
+.safespend-card {
+    background: rgba(22, 22, 22, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-left: 3px solid #ec4899;
+    border-radius: 12px;
+    padding: 0.95rem 1.15rem 1.05rem;
+    margin-bottom: 1.25rem;
+}
+.safespend-card.good { border-left-color: #34d399; }
+.safespend-card.warn { border-left-color: #f87171; }
+.safespend-conf {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #737373;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    padding: 0.12rem 0.5rem;
+}
+.safespend-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: #fafafa;
+    margin-top: 0.2rem;
+}
+.safespend-card.good .safespend-value { color: #34d399; }
+.safespend-card.warn .safespend-value { color: #f87171; }
+.safespend-unit {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #737373;
+    margin-left: 0.25rem;
+    letter-spacing: 0;
+}
+.safespend-sub {
+    font-size: 0.82rem;
+    color: #a3a3a3;
+    margin-top: 0.3rem;
+    font-variant-numeric: tabular-nums;
+}
+.safespend-sep { color: #525252; margin: 0 0.1rem; }
+.safespend-delta {
+    font-size: 0.86rem;
+    font-weight: 500;
+    margin-top: 0.75rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    line-height: 1.45;
+}
+.safespend-delta.good { color: #34d399; }
+.safespend-delta.warn { color: #f87171; }
+.safespend-delta.neutral { color: #a3a3a3; }
+
 /* Section headers (main area) */
 [data-testid="stAppViewContainer"] .main h3,
 [data-testid="stAppViewContainer"] .main h2 {
