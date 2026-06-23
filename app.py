@@ -145,7 +145,7 @@ DEFAULT_CFG = {
     "current_age": 28,
     "starting_amount": 550_000,
     "annual_contribution": 50_000,
-    "max_age": 100,
+    "max_age": 90,
     "inflation_rate": 0.03,
     "include_social_security": True,
     "social_security_claim_age": 67,
