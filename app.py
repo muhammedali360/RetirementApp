@@ -11,6 +11,8 @@ from matplotlib.ticker import FuncFormatter
 
 from model import (
     MODEL_CFG_FIELDS,
+    SUCCESS_THRESHOLD,
+    SUCCESS_THRESHOLD_PCT,
     compute_curve,
     compute_mc_net_worth_fan,
     find_min_years_worked,
@@ -220,7 +222,7 @@ PRESET_PROFILES = {
 
 GLOSSARY = {
     "Success rate": "Share of Monte Carlo trials where your portfolio stays positive through your planning horizon.",
-    "Earliest safe age": "The youngest retirement age (searched up to 85) whose success rate reaches ≥95% — where success means the portfolio lasts through your planning horizon.",
+    "Earliest safe age": f"The youngest retirement age (searched up to 85) whose success rate reaches ≥{SUCCESS_THRESHOLD_PCT}% — where success means the portfolio lasts through your planning horizon.",
     "Withdrawal rate": "Annual spending divided by portfolio at retirement — the 4% rule targets ≤4%.",
     "Sequence-of-returns risk": "Bad market returns early in retirement can permanently reduce portfolio durability.",
     "Planning horizon": "The age through which the model checks whether your money lasts (default: 100).",
@@ -278,7 +280,7 @@ def inject_custom_css():
 
 
 def insight_status(target_prob, on_track):
-    if on_track and target_prob is not None and target_prob >= 0.95:
+    if on_track and target_prob is not None and target_prob >= SUCCESS_THRESHOLD:
         return "good"
     if target_prob is not None and target_prob < 0.80:
         return "warn"
@@ -286,7 +288,7 @@ def insight_status(target_prob, on_track):
 
 
 def hero_status(target_prob, on_track):
-    if target_prob is not None and target_prob >= 0.95 and on_track:
+    if target_prob is not None and target_prob >= SUCCESS_THRESHOLD and on_track:
         return "On track", "good"
     if target_prob is not None and target_prob >= 0.80:
         return "Close", "neutral"
@@ -296,7 +298,7 @@ def hero_status(target_prob, on_track):
 def prob_semantic_class(target_prob):
     if target_prob is None:
         return "neutral"
-    if target_prob >= 0.95:
+    if target_prob >= SUCCESS_THRESHOLD:
         return "good"
     if target_prob >= 0.80:
         return "neutral"
@@ -342,7 +344,7 @@ def build_verdict_subline(target_prob, best_levers):
     pts = delta_pts(top.get("delta"))
     if pts in (None, 0):
         return None
-    at_target = target_prob is not None and target_prob >= 0.95
+    at_target = target_prob is not None and target_prob >= SUCCESS_THRESHOLD
     prefix = "Optional margin" if at_target else "Best lever"
     return f"{prefix}: {top['Change']} ({pts:+d} pts)."
 
@@ -854,11 +856,11 @@ def plot_success_curve(
         color=THEME["primary"], alpha=0.08, interpolate=True,
     )
     ax.fill_between(
-        chart_ages, chart_probs, 0.95, where=chart_probs >= 0.95,
+        chart_ages, chart_probs, SUCCESS_THRESHOLD, where=chart_probs >= SUCCESS_THRESHOLD,
         color=THEME["success"], alpha=0.14, interpolate=True,
     )
     _glow_line(ax, chart_ages, chart_probs, THEME["primary"], label="Success probability")
-    ax.axhline(0.95, linestyle="--", color=THEME["threshold"], linewidth=1.0, label="95% threshold")
+    ax.axhline(SUCCESS_THRESHOLD, linestyle="--", color=THEME["threshold"], linewidth=1.0, label=f"{SUCCESS_THRESHOLD_PCT}% threshold")
     ax.axvline(current_age, linestyle=":", color=THEME["secondary"], alpha=0.7, linewidth=1.2, label="Current age")
     if highlight_age is not None:
         prob_at_target = prob_at_age(ages, probs, highlight_age)
@@ -971,7 +973,7 @@ def plot_scenario_comparison(comparison_runs):
     for i, (name, ages, probs) in enumerate(comparison_runs):
         color = CHART_PALETTE[i % len(CHART_PALETTE)]
         ax.plot(np.asarray(ages), np.asarray(probs), linewidth=2.2, label=name, color=color)
-    ax.axhline(0.95, linestyle="--", color=THEME["threshold"], linewidth=1.2)
+    ax.axhline(SUCCESS_THRESHOLD, linestyle="--", color=THEME["threshold"], linewidth=1.2)
     ax.set_xlabel("Retirement Age")
     ax.set_ylabel("Success Probability")
     ax.set_title("Scenario Comparison · Monte Carlo")
@@ -998,7 +1000,7 @@ def render_career_years_section(
 ):
     """Only surfaced when SS work history is a real constraint — not sidebar arithmetic."""
     if min_years is None:
-        st.error(f"No career length up to 50 years reaches 95% success at age {target_age}.")
+        st.error(f"No career length up to 50 years reaches {SUCCESS_THRESHOLD_PCT}% success at age {target_age}.")
         return
 
     worked = cfg["years_already_worked"]
@@ -1008,20 +1010,20 @@ def render_career_years_section(
     if on_track:
         st.info(
             f"Social Security needs at least **{min_years}** total work years by age {target_age} "
-            f"for 95% success — your plan reaches **{baseline_career_years}**."
+            f"for {SUCCESS_THRESHOLD_PCT}% success — your plan reaches **{baseline_career_years}**."
         )
     else:
         shortfall = min_years - baseline_career_years
         st.warning(
             f"Social Security needs at least **{min_years}** total work years by age {target_age} "
-            f"for 95% success — your plan only reaches **{baseline_career_years}**. "
+            f"for {SUCCESS_THRESHOLD_PCT}% success — your plan only reaches **{baseline_career_years}**. "
             f"Work **{shortfall}** more year(s), retire later, or adjust savings/spending."
         )
 
 
 def build_optimizer_lines(target_age, min_years, baseline_career_years, years_already_worked, years_until):
     if min_years is None:
-        return [f"No career length up to 50 years reaches 95% at age {target_age}."]
+        return [f"No career length up to 50 years reaches {SUCCESS_THRESHOLD_PCT}% at age {target_age}."]
     status = "On track" if baseline_career_years >= min_years else (
         f"Short by {min_years - baseline_career_years} year(s)"
     )
@@ -1320,7 +1322,7 @@ with main_body.container():
         show_section(
             "Success probability curve",
             "Each point is the chance your portfolio stays funded through your planning "
-            "horizon if you retire at that age. The shaded band marks ≥95% success.",
+            f"horizon if you retire at that age. The shaded band marks ≥{SUCCESS_THRESHOLD_PCT}% success.",
         )
         chart_end_age = st.slider(
             "Chart ends at age",
@@ -1349,7 +1351,7 @@ with main_body.container():
                     "spending from that age onward."
                 )
         else:
-            st.error("No retirement age reaches ≥95% success with these inputs.")
+            st.error(f"No retirement age reaches ≥{SUCCESS_THRESHOLD_PCT}% success with these inputs.")
 
         with st.expander("Sequence-of-returns risk", expanded=True):
             show_section(
