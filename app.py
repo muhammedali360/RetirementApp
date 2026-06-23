@@ -387,8 +387,8 @@ def render_hero(
             <div class="hero-header">
                 <h1 class="hero-title">{APP_NAME}</h1>
                 <span class="hero-status {status_class}">{status_label}</span>
+                <span class="hero-chips">{"".join(chips)}</span>
             </div>
-            <div class="hero-chips">{"".join(chips)}</div>
         </div>
         """,
         unsafe_allow_html=True,
