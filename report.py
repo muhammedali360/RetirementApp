@@ -5,6 +5,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
+from model import SUCCESS_THRESHOLD, SUCCESS_THRESHOLD_PCT
+
 
 def delta_pts(delta):
     return round(delta * 100) if delta is not None else None
@@ -60,12 +62,14 @@ def build_plan_narrative(
 
     parts = []
     if target_prob is not None:
-        if target_prob >= 0.95:
-            parts.append(f"Your plan clears the 95% bar at age {bold(target_age)}.")
+        if target_prob >= SUCCESS_THRESHOLD:
+            parts.append(
+                f"Your plan clears the {SUCCESS_THRESHOLD_PCT}% bar at age {bold(target_age)}."
+            )
         elif target_prob >= 0.80:
             parts.append(
                 f"You have an {bold(f'{target_prob * 100:.0f}')} chance of success at age "
-                f"{bold(target_age)} — close, but not at the 95% threshold."
+                f"{bold(target_age)} — close, but not at the {SUCCESS_THRESHOLD_PCT}% threshold."
             )
         else:
             parts.append(
@@ -73,11 +77,15 @@ def build_plan_narrative(
                 "— consider saving more, spending less, or retiring later."
             )
     if ranges:
-        parts.append(f"Earliest age with ≥95% success: {bold(ranges[0][0])}.")
+        parts.append(
+            f"Earliest age with ≥{SUCCESS_THRESHOLD_PCT}% success: {bold(ranges[0][0])}."
+        )
     if on_track:
         parts.append("Your planned career length supports your target.")
     elif years_until > 0:
-        parts.append("You may need more working years to hit 95% at your target age.")
+        parts.append(
+            f"You may need more working years to hit {SUCCESS_THRESHOLD_PCT}% at your target age."
+        )
     if withdrawal_rate is not None and withdrawal_rate > 0.05:
         parts.append(
             f"Withdrawal rate at age {bold(target_age)} is "
@@ -91,7 +99,7 @@ def build_plan_narrative(
 
     lever_text = format_lever_recommendation(
         levers or [],
-        at_target=target_prob is not None and target_prob >= 0.95,
+        at_target=target_prob is not None and target_prob >= SUCCESS_THRESHOLD,
         html=html,
     )
     if lever_text:
@@ -136,7 +144,7 @@ def _ss_summary(cfg):
     return f"Claim at age {claim_age}"
 
 
-def safe_retirement_ranges(ages, probs, threshold=0.95):
+def safe_retirement_ranges(ages, probs, threshold=SUCCESS_THRESHOLD):
     ages = np.asarray(ages)
     probs = np.asarray(probs)
     safe = ages[probs >= threshold]
@@ -163,13 +171,13 @@ def format_safe_ranges_plain(ranges, max_eval_age):
     if len(ranges) == 1:
         start, end = ranges[0]
         if start == end:
-            return f"Only age {start} meets the >=95% threshold"
+            return f"Only age {start} meets the >={SUCCESS_THRESHOLD_PCT}% threshold"
         if end >= max_eval_age - 1:
             return (
-                f"Earliest retirement age with >=95% success: {start} "
+                f"Earliest retirement age with >={SUCCESS_THRESHOLD_PCT}% success: {start} "
                 f"(all later ages through {max_eval_age} are also safe)"
             )
-        return f"Ages {start}-{end} meet the >=95% threshold"
+        return f"Ages {start}-{end} meet the >={SUCCESS_THRESHOLD_PCT}% threshold"
 
     parts = []
     for start, end in ranges:
@@ -244,7 +252,7 @@ def _draw_report(
     if safe_summary:
         y = _draw_wrapped_text(c, safe_summary, 50, y, width - 100)
     else:
-        c.drawString(50, y, "No retirement age reaches >=95% success")
+        c.drawString(50, y, f"No retirement age reaches >={SUCCESS_THRESHOLD_PCT}% success")
         y -= 18
 
     if len(ages) > 0:

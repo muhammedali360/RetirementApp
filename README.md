@@ -1,6 +1,6 @@
 # Retirement Runway — Retirement Probability Simulator
 
-A Monte Carlo retirement planning tool with a Streamlit dashboard. It estimates the probability that your portfolio lasts through retirement at different retirement ages, finds the minimum career length needed for 95% success, and visualizes sequence-of-returns risk.
+A Monte Carlo retirement planning tool with a Streamlit dashboard. It estimates the probability that your portfolio lasts through retirement at different retirement ages, finds the minimum career length needed for 90% success, and visualizes sequence-of-returns risk.
 
 ## Requirements
 
@@ -114,7 +114,7 @@ The main page shows, in order:
 3. **Signal** — plain-language summary of your plan, including best what-if levers when relevant
 4. **KPIs** — success probability at target age, earliest safe age, and withdrawal rate at target age
 5. **Success probability curve** — Monte Carlo success vs. retirement age, with a **Chart ends at age** slider to zoom the x-axis and a **Download chart PNG** button
-6. **Safe-age summary** — message below the curve when any age reaches ≥95% success (with an SS note if the earliest safe age aligns with your claim age)
+6. **Safe-age summary** — message below the curve when any age reaches ≥90% success (with an SS note if the earliest safe age aligns with your claim age)
 7. **Sequence-of-returns risk** (expander) — Monte Carlo fan chart at your target retirement age, with **Adjust for inflation** toggle and **Download chart PNG**
 8. **Career years** — shown only when Social Security work history is a constraint (see section 5)
 9. **What if** (expander) — quick scenario changes without editing the sidebar
@@ -125,7 +125,7 @@ The main page shows, in order:
 
 The success curve uses Monte Carlo simulation: random annual returns are sampled from a log-normal distribution. **Success** means the portfolio stays positive through your planning horizon.
 
-Safe retirement ages (≥95% success) are evaluated from your current age through `min(85, planning horizon)`. The chart defaults from your current age to roughly your target age + 5; use **Chart ends at age** to zoom in or out.
+Safe retirement ages (≥90% success) are evaluated from your current age through `min(85, planning horizon)`. The chart defaults from your current age to roughly your target age + 5; use **Chart ends at age** to zoom in or out.
 
 ### 4. Sequence-of-returns risk
 
@@ -140,7 +140,7 @@ This highlights how early-market luck affects outcomes.
 
 ### 5. Career years
 
-For your target retirement age, the app finds the minimum total work history needed for ≥95% success and compares it to your plan (years worked so far + years until retirement). Longer careers mainly raise **Social Security** income in this model.
+For your target retirement age, the app finds the minimum total work history needed for ≥90% success and compares it to your plan (years worked so far + years until retirement). Longer careers mainly raise **Social Security** income in this model.
 
 On the main page, this section appears **only when SS work history is a constraint** — i.e. when you are not on track, or when the required minimum exceeds years you have already worked. When your plan already satisfies the requirement, the section is hidden (results still appear in the PDF report).
 

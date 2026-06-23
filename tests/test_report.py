@@ -75,13 +75,13 @@ def test_format_lever_recommendation_html():
 # -------------------------
 # build_plan_narrative
 # -------------------------
-def test_build_plan_narrative_clears_95():
+def test_build_plan_narrative_clears_threshold():
     text = report.build_plan_narrative(
         target_prob=0.97, target_age=60, on_track=True,
         withdrawal_rate=0.03, ranges=[(58, 60)], years_until=0,
     )
-    assert "clears the 95% bar at age 60" in text
-    assert "Earliest age with ≥95% success: 58." in text
+    assert "clears the 90% bar at age 60" in text
+    assert "Earliest age with ≥90% success: 58." in text
     assert "within a typical safe range" in text
 
 
@@ -101,7 +101,7 @@ def test_build_plan_narrative_handles_no_target_prob():
         withdrawal_rate=None, ranges=[], years_until=0,
     )
     # No crash, no probability sentence.
-    assert "95% bar" not in text
+    assert "90% bar" not in text
 
 
 # -------------------------
@@ -140,19 +140,19 @@ def test_format_safe_ranges_plain_none():
 
 def test_format_safe_ranges_plain_single_age():
     assert report.format_safe_ranges_plain([(60, 60)], max_eval_age=85) == (
-        "Only age 60 meets the >=95% threshold"
+        "Only age 60 meets the >=90% threshold"
     )
 
 
 def test_format_safe_ranges_plain_all_later_safe():
     msg = report.format_safe_ranges_plain([(58, 85)], max_eval_age=85)
-    assert "Earliest retirement age with >=95% success: 58" in msg
+    assert "Earliest retirement age with >=90% success: 58" in msg
     assert "all later ages through 85 are also safe" in msg
 
 
 def test_format_safe_ranges_plain_bounded_range():
     assert report.format_safe_ranges_plain([(55, 60)], max_eval_age=85) == (
-        "Ages 55-60 meet the >=95% threshold"
+        "Ages 55-60 meet the >=90% threshold"
     )
 
 

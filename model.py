@@ -3,6 +3,10 @@ import numpy as np
 DEFAULT_SS_MAX_BENEFIT = 24_000
 SS_FULL_RETIREMENT_AGE = 67
 
+# Probability of portfolio survival we treat as "safe" for retirement.
+SUCCESS_THRESHOLD = 0.90
+SUCCESS_THRESHOLD_PCT = round(SUCCESS_THRESHOLD * 100)
+
 # Config fields that actually affect the simulation / report output. The Monte
 # Carlo cache key is derived from only these so that toggling UI-only state
 # (e.g. show_real_values, advanced_mode, active_profile) does not force a
@@ -281,7 +285,7 @@ def _success_at_career_years(
 
 
 def find_min_years_worked(
-    cfg, retirement_age, mean_return, volatility, target=0.95, max_years=50,
+    cfg, retirement_age, mean_return, volatility, target=SUCCESS_THRESHOLD, max_years=50,
     seed=None,
 ):
     """Minimum total career years by retirement for target success."""
