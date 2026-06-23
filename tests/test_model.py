@@ -242,6 +242,64 @@ def test_find_min_years_worked_impossible_target(cfg):
 
 
 # -------------------------
+# SUSTAINABLE SPENDING SOLVER
+# -------------------------
+def _success_at_spend(cfg, retirement_age, spend, mean_return, volatility, seed):
+    """Recompute success for a fixed budget using the same seed as the solver,
+    so the returns draw (and therefore the probability) matches exactly."""
+    years_worked = cfg["years_already_worked"] + max(retirement_age - cfg["current_age"], 0)
+    ss_income = model.social_security_income(cfg, years_worked)
+    trial_cfg = dict(cfg, annual_spending=float(spend))
+    return model.simulate_batch(
+        trial_cfg, retirement_age, mean_return, volatility,
+        ss_income=ss_income, trials=cfg["trials"], seed=seed,
+    )
+
+
+def test_find_max_sustainable_spending_returns_int_or_none(cfg):
+    result = model.find_max_sustainable_spending(cfg, 65, 0.06, 0.12, seed=23)
+    assert result is None or isinstance(result, int)
+
+
+def test_find_max_sustainable_spending_lands_on_boundary(cfg):
+    # The returned budget clears the target, and one grid step more does not —
+    # i.e. it is the maximum sustainable spend, not merely a sustainable one.
+    target, seed, age, step = 0.90, 41, 65, 1000
+    safe = model.find_max_sustainable_spending(
+        cfg, age, 0.06, 0.12, target=target, seed=seed, step=step,
+    )
+    assert safe is not None and safe > 0
+    assert _success_at_spend(cfg, age, safe, 0.06, 0.12, seed) >= target
+    assert _success_at_spend(cfg, age, safe + step, 0.06, 0.12, seed) < target
+
+
+def test_find_max_sustainable_spending_is_multiple_of_step(cfg):
+    safe = model.find_max_sustainable_spending(cfg, 65, 0.06, 0.12, seed=5, step=2500)
+    assert safe % 2500 == 0
+
+
+def test_find_max_sustainable_spending_more_money_allows_more_spend(cfg):
+    poor = dict(cfg, starting_amount=500_000)
+    rich = dict(cfg, starting_amount=3_000_000)
+    s_poor = model.find_max_sustainable_spending(poor, 65, 0.06, 0.12, seed=7)
+    s_rich = model.find_max_sustainable_spending(rich, 65, 0.06, 0.12, seed=7)
+    assert s_rich > s_poor
+
+
+def test_find_max_sustainable_spending_higher_target_is_stricter(cfg):
+    # Demanding more confidence can only lower (never raise) the safe budget.
+    relaxed = model.find_max_sustainable_spending(cfg, 65, 0.06, 0.12, target=0.80, seed=9)
+    strict = model.find_max_sustainable_spending(cfg, 65, 0.06, 0.12, target=0.99, seed=9)
+    assert strict <= relaxed
+
+
+def test_find_max_sustainable_spending_degenerate_returns_none(cfg):
+    # Retire today with no money and no savings: not even $0 spending survives.
+    broke = dict(cfg, current_age=65, starting_amount=0, annual_contribution=0)
+    assert model.find_max_sustainable_spending(broke, 65, 0.06, 0.12, seed=2) is None
+
+
+# -------------------------
 # DETERMINISTIC NET WORTH
 # -------------------------
 def test_simulate_net_worth_success(cfg):

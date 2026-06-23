@@ -312,6 +312,63 @@ def find_min_years_worked(
     return result
 
 
+def find_max_sustainable_spending(
+    cfg, retirement_age, mean_return, volatility,
+    target=SUCCESS_THRESHOLD, seed=None, step=1000,
+):
+    """Largest annual spending whose success rate at `retirement_age` still
+    clears `target`.
+
+    The inverse of the success curve: instead of scoring a fixed budget, it
+    solves for the budget the plan can actually sustain. Spending and success
+    move in opposite directions monotonically, so a binary search on a `step`
+    grid lands exactly on the boundary. A single returns draw is shared across
+    every probe so the comparison is apples-to-apples and fast.
+
+    Returns dollars rounded down to the nearest `step`, or None if the plan
+    misses the target even at zero spending (a degenerate, broke config).
+    """
+    n_years = cfg["max_age"] - cfg["current_age"] + 1
+    returns = generate_returns(mean_return, volatility, cfg["trials"], n_years, seed)
+    years_worked = cfg["years_already_worked"] + max(retirement_age - cfg["current_age"], 0)
+    ss_income = social_security_income(cfg, years_worked)
+
+    def success(spend):
+        trial_cfg = dict(cfg)
+        trial_cfg["annual_spending"] = float(spend)
+        return simulate_batch(
+            trial_cfg, retirement_age, mean_return, volatility,
+            ss_income, cfg["trials"], returns=returns,
+        )
+
+    # Zero spending never depletes a non-empty portfolio; if even that misses
+    # the target there is nothing to solve for.
+    if success(0) < target:
+        return None
+
+    # Expand an upper bound until spending is clearly unsustainable, seeding
+    # from the current plan so the common case converges in a few probes.
+    base = max(step, int(np.ceil(cfg.get("annual_spending", step) / step)) * step)
+    hi = base
+    for _ in range(40):
+        if success(hi) < target:
+            break
+        hi *= 2
+    else:
+        return int(hi)  # extraordinarily well-funded — return the cap reached
+
+    # Binary search the grid for the largest sustainable budget.
+    lo_k, hi_k, best = 0, hi // step, 0
+    while lo_k <= hi_k:
+        mid_k = (lo_k + hi_k) // 2
+        if success(mid_k * step) >= target:
+            best = mid_k * step
+            lo_k = mid_k + 1
+        else:
+            hi_k = mid_k - 1
+    return int(best)
+
+
 # -------------------------
 # NET WORTH PROJECTION (deterministic overlay)
 # -------------------------

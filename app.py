@@ -15,6 +15,7 @@ from model import (
     SUCCESS_THRESHOLD_PCT,
     compute_curve,
     compute_mc_net_worth_fan,
+    find_max_sustainable_spending,
     find_min_years_worked,
     simulate_net_worth,
     social_security_start_age,
@@ -33,6 +34,10 @@ CUSTOM_CSS = Path(__file__).parent / ".streamlit" / "static" / "custom.css"
 
 APP_NAME = "Retirement Runway"
 SS_CLAIM_AGES = [62, 67, 70]
+# Grid resolution for the sustainable-spending solver; also the threshold below
+# which "headroom vs. plan" rounds to break-even. Keep in sync with the
+# `step` default of model.find_max_sustainable_spending.
+SAFE_SPEND_STEP = 1000
 
 RISK_PRESETS = {
     "Conservative": {"mean_return": 0.05, "volatility": 0.09},
@@ -437,6 +442,56 @@ def render_kpi_row(
     )
 
 
+def safe_spend_state(safe_spend, current_spend, target_age):
+    """Compare the sustainable budget to the user's plan → (status, message)."""
+    if safe_spend is None or safe_spend < SAFE_SPEND_STEP:
+        return "warn", (
+            f"No budget reaches {SUCCESS_THRESHOLD_PCT}% at age {target_age} — "
+            "retire later, save more, or claim Social Security."
+        )
+    headroom = safe_spend - current_spend
+    if headroom >= SAFE_SPEND_STEP:
+        return "good", (
+            f"▲ {format_currency(headroom)}/yr of headroom above your "
+            f"{format_currency(current_spend)} plan — room to spend more."
+        )
+    if headroom <= -SAFE_SPEND_STEP:
+        return "warn", (
+            f"▼ {format_currency(-headroom)}/yr over your safe max — "
+            f"trim toward {format_currency(safe_spend)} or retire later."
+        )
+    return "neutral", (
+        f"Right at your safe max — your {format_currency(current_spend)} "
+        "plan leaves little margin for a rough market."
+    )
+
+
+def render_safe_spend(safe_spend, current_spend, target_age, withdrawal_rate):
+    """Headline 'how much can I actually spend?' card — the inverse insight."""
+    if safe_spend is None:
+        return
+    status, message = safe_spend_state(safe_spend, current_spend, target_age)
+    wr_txt = (
+        f' <span class="safespend-sep">·</span> {withdrawal_rate * 100:.1f}% withdrawal rate'
+        if withdrawal_rate is not None
+        else ""
+    )
+    st.markdown(
+        f'<div class="safespend-card {status}">'
+        f'<div class="signal-header">'
+        f'<span class="signal-dot {status}"></span>'
+        f'<span class="signal-label">Sustainable spending</span>'
+        f'<span class="safespend-conf">{SUCCESS_THRESHOLD_PCT}% confidence</span>'
+        f"</div>"
+        f'<div class="safespend-value">{format_currency(safe_spend)}'
+        f'<span class="safespend-unit">/yr</span></div>'
+        f'<div class="safespend-sub">retiring at age {target_age}{wr_txt}</div>'
+        f'<div class="safespend-delta {status}">{message}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_skeleton():
     st.markdown(
         """
@@ -801,6 +856,16 @@ def cached_model(fn_name, cfg_key, args_key):
             args["retirement_age"],
             args["mean_return"],
             args["volatility"],
+            seed=args.get("seed"),
+        )
+
+    if fn_name == "max_spend":
+        return find_max_sustainable_spending(
+            cfg,
+            args["retirement_age"],
+            args["mean_return"],
+            args["volatility"],
+            target=args.get("target", SUCCESS_THRESHOLD),
             seed=args.get("seed"),
         )
 
@@ -1265,6 +1330,11 @@ with st.spinner(f"Running {trial_count:,} Monte Carlo trials…"):
         cfg_key,
         json.dumps({"retirement_age": target_age, **model_args}),
     )
+    safe_spend = cached_model(
+        "max_spend",
+        cfg_key,
+        json.dumps({"retirement_age": target_age, **model_args}),
+    )
 
 ranges = safe_retirement_ranges(ages, probs)
 target_prob = prob_at_age(ages, probs, target_age)
@@ -1272,6 +1342,12 @@ years_until_retirement, baseline_career_years = planned_career_years(cfg, target
 on_track = min_years is not None and baseline_career_years >= min_years
 
 withdrawal_rate = compute_withdrawal_rate(cfg, target_age, mean_return)
+safe_spend_portfolio = portfolio_at_retirement(cfg, target_age, mean_return)
+safe_spend_wr = (
+    safe_spend / safe_spend_portfolio
+    if safe_spend and safe_spend_portfolio and safe_spend_portfolio > 0
+    else None
+)
 _, det_years, det_nominal, det_real = simulate_net_worth(cfg, target_age, mean_return)
 det_label = f"Fixed {mean_return * 100:.1f}% return"
 what_if_rows = run_what_if_scenarios(
@@ -1319,6 +1395,13 @@ with main_body.container():
     )
 
     with tab_plan:
+        render_safe_spend(
+            safe_spend,
+            cfg.get("annual_spending", 0),
+            target_age,
+            safe_spend_wr,
+        )
+
         show_section(
             "Success probability curve",
             "Each point is the chance your portfolio stays funded through your planning "
