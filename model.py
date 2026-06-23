@@ -7,6 +7,23 @@ SS_FULL_RETIREMENT_AGE = 67
 SUCCESS_THRESHOLD = 0.90
 SUCCESS_THRESHOLD_PCT = round(SUCCESS_THRESHOLD * 100)
 
+# -------------------------
+# DYNAMIC SPENDING ("smart spending" / guardrails)
+# -------------------------
+# Smart spending flexes the annual withdrawal with the market instead of holding
+# it flat in real terms. We follow a Guyton-Klinger-style guardrail: each
+# retirement year we compare the current withdrawal rate (planned withdrawal /
+# current portfolio) to the rate locked in at the retirement date. If it drifts
+# more than GUARDRAIL_BAND above that anchor — markets fell and the rate spiked —
+# we cut spending by GUARDRAIL_ADJUST; if it drifts the same distance below, we
+# raise it. Spending is clamped to a real-terms band so a long bull or bear run
+# can't push the lifestyle to an unrealistic extreme (and so a deep cut can't
+# inflate the success rate by quietly starving the plan).
+GUARDRAIL_BAND = 0.20
+GUARDRAIL_ADJUST = 0.10
+SPEND_FLOOR_MULT = 0.75
+SPEND_CEILING_MULT = 1.25
+
 # Config fields that actually affect the simulation / report output. The Monte
 # Carlo cache key is derived from only these so that toggling UI-only state
 # (e.g. show_real_values, advanced_mode, active_profile) does not force a
@@ -25,6 +42,7 @@ MODEL_CFG_FIELDS = (
     "ss_max_benefit",
     "starting_amount",
     "trials",
+    "withdrawal_strategy",
     "years_already_worked",
 )
 
@@ -48,6 +66,25 @@ def build_spending_array(cfg):
 
 def get_spending(age, cfg):
     return float(build_spending_array(cfg)[age])
+
+
+def withdrawal_strategy(cfg):
+    """Active spending strategy: 'fixed' (inflation-only) or 'guardrails'."""
+    return cfg.get("withdrawal_strategy", "fixed")
+
+
+def guardrail_income_band(cfg, base=None):
+    """Real-terms (floor, base, ceiling) annual spending under smart spending.
+
+    The guardrail multiplier is clamped to [SPEND_FLOOR_MULT, SPEND_CEILING_MULT],
+    so these are the lowest and highest lifestyle the strategy will ever settle
+    on, expressed in today's dollars around a base budget. `base` defaults to the
+    configured plan spend, but callers pass the sustainable base so the band
+    straddles the same number the Sustainable-spending card headlines.
+    """
+    if base is None:
+        base = _annual_spending(cfg)
+    return base * SPEND_FLOOR_MULT, base, base * SPEND_CEILING_MULT
 
 
 # -------------------------
@@ -139,8 +176,124 @@ def _spending_matrix(retirement_ages, current_age, max_age, inflation_rate, ss_s
     return spending
 
 
+def _guardrail_inputs(cfg, retirement_ages, ss_incomes=None):
+    """Per-(retirement age, calendar year) matrices for the guardrail simulator.
+
+    Unlike `_spending_matrix`, the Social Security offset is kept *separate* from
+    spending: the guardrail multiplier scales lifestyle spending, while the SS
+    benefit is a fixed real floor that does not flex with the market.
+    """
+    current_age = cfg["current_age"]
+    max_age = cfg["max_age"]
+    calendar_ages = np.arange(current_age, max_age + 1)
+    ages = np.asarray(retirement_ages, dtype=np.int64)
+    inflation = cfg["inflation_rate"]
+    spending_by_age = build_spending_array(cfg)
+
+    yrs_since = np.maximum(calendar_ages[None, :] - ages[:, None], 0)
+    retired = calendar_ages[None, :] >= ages[:, None]
+    gross = spending_by_age[calendar_ages][None, :] * ((1 + inflation) ** yrs_since)
+    gross = np.where(retired, gross, 0.0)
+
+    if ss_incomes is None:
+        years_worked = cfg["years_already_worked"] + (ages - current_age)
+        ss_incomes = social_security_income_batch(cfg, years_worked)
+    else:
+        ss_incomes = np.asarray(ss_incomes, dtype=np.float64)
+
+    ss_start = social_security_start_age(cfg)
+    if ss_start is not None:
+        ss_active = calendar_ages[None, :] >= ss_start
+        ss_off = ss_incomes[:, None] * ((1 + inflation) ** yrs_since)
+        ss_off = np.where(ss_active, ss_off, 0.0)
+    else:
+        ss_off = np.zeros_like(gross)
+
+    contribute = np.where(
+        calendar_ages[None, :] < ages[:, None], cfg["annual_contribution"], 0.0,
+    )
+    is_retire_year = calendar_ages[None, :] == ages[:, None]
+    return calendar_ages, gross, ss_off, contribute, retired, is_retire_year
+
+
+def _simulate_guardrails(cfg, retirement_ages, returns, ss_incomes=None, collect_paths=False):
+    """Monte Carlo with Guyton-Klinger spending guardrails, vectorized across
+    trials and retirement ages at once.
+
+    Returns (calendar_ages, alive, paths) where `alive` is the final
+    per-(trial, age) survival mask and `paths` is the full net-worth tensor of
+    shape (trials, ages, years) — or None when not requested, to avoid the
+    allocation on the success-curve path that only needs survival.
+    """
+    calendar_ages, gross, ss_off, contribute, retired, is_retire_year = _guardrail_inputs(
+        cfg, retirement_ages, ss_incomes,
+    )
+    n_trials = returns.shape[0]
+    n_ages = gross.shape[0]
+    n_years = len(calendar_ages)
+
+    net = np.full((n_trials, n_ages), cfg["starting_amount"], dtype=np.float64)
+    alive = np.ones((n_trials, n_ages), dtype=bool)
+    spend_mult = np.ones((n_trials, n_ages), dtype=np.float64)
+    anchor_wr = np.zeros((n_trials, n_ages), dtype=np.float64)
+    anchored = np.zeros((n_trials, n_ages), dtype=bool)
+
+    paths = (
+        np.zeros((n_trials, n_ages, n_years), dtype=np.float64)
+        if collect_paths else None
+    )
+
+    for i in range(n_years):
+        net = np.where(alive, net + contribute[:, i], net)
+        net = np.where(alive, net * (1.0 + returns[:, i:i + 1]), net)
+
+        retired_i = retired[:, i]
+        if retired_i.any():
+            gross_i = gross[:, i][None, :]
+            ss_i = ss_off[:, i][None, :]
+            retire_year_i = is_retire_year[:, i][None, :]
+
+            # Withdrawal rate at the current spend level vs. the current balance.
+            withdrawal = np.maximum(gross_i * spend_mult - ss_i, 0.0)
+            wr = withdrawal / np.maximum(net, 1.0)
+
+            # Lock the anchor rate the first retired year, then flex against it.
+            lock = retire_year_i & alive & ~anchored
+            anchor_wr = np.where(lock, wr, anchor_wr)
+            anchored |= lock
+
+            flex = retired_i[None, :] & alive & anchored & ~lock
+            upper = anchor_wr * (1.0 + GUARDRAIL_BAND)
+            lower = anchor_wr * (1.0 - GUARDRAIL_BAND)
+            spend_mult = np.where(
+                flex & (wr > upper), spend_mult * (1.0 - GUARDRAIL_ADJUST), spend_mult,
+            )
+            spend_mult = np.where(
+                flex & (wr < lower), spend_mult * (1.0 + GUARDRAIL_ADJUST), spend_mult,
+            )
+            spend_mult = np.clip(spend_mult, SPEND_FLOOR_MULT, SPEND_CEILING_MULT)
+
+            # Re-derive the withdrawal after any adjustment, then deduct it.
+            withdrawal = np.maximum(gross_i * spend_mult - ss_i, 0.0)
+            spend_active = retired_i[None, :] & alive
+            net = np.where(spend_active, net - withdrawal, net)
+            alive &= ~(spend_active & (net <= 0))
+
+        if collect_paths:
+            paths[:, :, i] = np.where(alive, net, 0.0)
+
+    return calendar_ages, alive, paths
+
+
 def _simulate_trial_paths(cfg, retirement_age, returns, ss_income=None):
     """Run trials and return net-worth path for each trial (0 after depletion)."""
+    if withdrawal_strategy(cfg) == "guardrails":
+        ss_incomes = None if ss_income is None else [ss_income]
+        calendar_ages, _, paths = _simulate_guardrails(
+            cfg, [retirement_age], returns, ss_incomes=ss_incomes, collect_paths=True,
+        )
+        return calendar_ages, paths[:, 0, :]
+
     current_age = cfg["current_age"]
     max_age = cfg["max_age"]
     n_years = max_age - current_age + 1
@@ -202,6 +355,10 @@ def simulate_batch(
 
 def _simulate_all_retirement_ages(cfg, retirement_ages, returns):
     """Vectorized Monte Carlo across all retirement ages at once."""
+    if withdrawal_strategy(cfg) == "guardrails":
+        _, alive, _ = _simulate_guardrails(cfg, retirement_ages, returns)
+        return alive.mean(axis=0)
+
     current_age = cfg["current_age"]
     max_age = cfg["max_age"]
     n_years = max_age - current_age + 1
