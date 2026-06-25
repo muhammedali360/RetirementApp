@@ -14,6 +14,7 @@ from model import (
     SUCCESS_THRESHOLD,
     SUCCESS_THRESHOLD_PCT,
     coast_growth_paths,
+    coast_success,
     compute_curve,
     compute_mc_net_worth_fan,
     find_coast_number,
@@ -606,28 +607,31 @@ def render_coast_progress(coast, current_portfolio):
     )
 
 
-def render_coast_kpis(coast_age, current_age, target_age, annual_contribution):
-    """Three compact stats translating the coast age into a decision.
+def render_coast_kpis(coast_age, current_age, target_age, stop_now_odds):
+    """Three compact stats translating the coast number into a decision.
 
-    Turns the abstract crossover into *when* saving becomes optional, *how many
-    more years* of saving that leaves, and the lifetime contributions you'd be
-    free to skip from that point on.
+    Covers three distinct axes: *when* saving becomes optional (coast age),
+    *how long* until then (years left), and *how risky it is to quit today*
+    (the stop-now odds — success at today's balance with no contributions,
+    which the coast number is the threshold-clearing version of).
     """
     if coast_age is None:
         # Portfolio never catches the line by retirement — saving never becomes
         # optional on the current plan.
         age_val, age_cls = f"After {target_age}", "neutral"
         years_val, years_cls = f"{max(target_age - current_age, 0)}+ yrs", "neutral"
-        freed_val, freed_cls = "$0", "neutral"
     else:
         saving_years = max(coast_age - current_age, 0)
-        freed = annual_contribution * max(target_age - coast_age, 0)
         age_val = "Now" if coast_age <= current_age else str(coast_age)
         age_cls = "good"
         years_val = f"{saving_years} yr" if saving_years == 1 else f"{saving_years} yrs"
         years_cls = "good" if saving_years == 0 else "neutral"
-        freed_val = format_currency(freed)
-        freed_cls = "good" if freed > 0 else "neutral"
+    # Classify on the rounded percentage actually shown so the colour never
+    # disagrees with the number (e.g. 0.799 displays "80%" but would otherwise
+    # colour as if below the 80% band).
+    odds_pct = round(stop_now_odds * 100)
+    odds_val = f"{odds_pct}%"
+    odds_cls = prob_semantic_class(odds_pct / 100)
     st.markdown(
         f"""
         <div class="kpi-grid coast-kpis">
@@ -640,8 +644,8 @@ def render_coast_kpis(coast_age, current_age, target_age, annual_contribution):
                 <div class="kpi-value {years_cls}">{years_val}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Contributions freed</div>
-                <div class="kpi-value {freed_cls}">{freed_val}</div>
+                <div class="kpi-label">Odds if you stop now</div>
+                <div class="kpi-value {odds_cls}">{odds_val}</div>
             </div>
         </div>
         """,
@@ -1068,6 +1072,15 @@ def cached_model(fn_name, cfg_key, args_key):
             args["mean_return"],
             args["volatility"],
             target=args.get("target", SUCCESS_THRESHOLD),
+            seed=args.get("seed"),
+        )
+
+    if fn_name == "coast_success":
+        return coast_success(
+            cfg,
+            args["retirement_age"],
+            args["mean_return"],
+            args["volatility"],
             seed=args.get("seed"),
         )
 
@@ -1618,6 +1631,11 @@ with st.spinner(f"Running {trial_count:,} Monte Carlo trials…"):
         cfg_key,
         json.dumps({"retirement_age": target_age, **model_args}),
     )
+    coast_stop_now_odds = cached_model(
+        "coast_success",
+        cfg_key,
+        json.dumps({"retirement_age": target_age, **model_args}),
+    )
 
 smart_spending_on = cfg.get("withdrawal_strategy") == "guardrails"
 fixed_ages = fixed_probs = None
@@ -1834,7 +1852,7 @@ with main_body.container():
                 cfg, coast_number, target_age, cfg["mean_return"],
             )
             render_coast_kpis(
-                coast_age, cfg["current_age"], target_age, cfg["annual_contribution"],
+                coast_age, cfg["current_age"], target_age, coast_stop_now_odds,
             )
             coast_fig = plot_coast_growth(
                 coast_ages, coast_line, portfolio_line, coast_age,
