@@ -438,6 +438,41 @@ def test_find_coast_number_later_retirement_lowers_coast(cfg):
     assert late < early
 
 
+def test_coast_growth_paths_endpoints_and_length(cfg):
+    ages, coast_line, portfolio_line, _ = model.coast_growth_paths(cfg, 800_000, 65, 0.06)
+    assert ages[0] == cfg["current_age"] and ages[-1] == 65
+    assert len(ages) == len(coast_line) == len(portfolio_line) == 65 - cfg["current_age"] + 1
+    # Both trajectories start at "today": the coast number and today's balance.
+    assert coast_line[0] == 800_000
+    assert portfolio_line[0] == cfg["starting_amount"]
+    # The coast number compounds untouched at the expected return.
+    assert coast_line[-1] == pytest.approx(800_000 * 1.06 ** (65 - cfg["current_age"]))
+
+
+def test_coast_growth_paths_already_coasting(cfg):
+    # Today's balance already clears a small coast number → coasting from today.
+    _, _, _, coast_age = model.coast_growth_paths(cfg, 100_000, 65, 0.06)
+    assert coast_age == cfg["current_age"]
+
+
+def test_coast_growth_paths_crossover_when_contributing(cfg):
+    # Starting below the line but saving hard, the portfolio catches it before
+    # retirement at an age past today.
+    saver = dict(cfg, starting_amount=300_000, annual_contribution=80_000)
+    ages, coast_line, portfolio_line, coast_age = model.coast_growth_paths(saver, 700_000, 65, 0.06)
+    assert coast_age is not None and cfg["current_age"] < coast_age <= 65
+    idx = ages.index(coast_age)
+    assert portfolio_line[idx] >= coast_line[idx]
+    assert portfolio_line[idx - 1] < coast_line[idx - 1]
+
+
+def test_coast_growth_paths_never_reached_returns_none(cfg):
+    # A huge coast number with no contributions is never caught.
+    lagging = dict(cfg, starting_amount=100_000, annual_contribution=0)
+    _, _, _, coast_age = model.coast_growth_paths(lagging, 5_000_000, 65, 0.06)
+    assert coast_age is None
+
+
 # -------------------------
 # DETERMINISTIC NET WORTH
 # -------------------------

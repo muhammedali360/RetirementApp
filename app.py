@@ -13,6 +13,7 @@ from model import (
     MODEL_CFG_FIELDS,
     SUCCESS_THRESHOLD,
     SUCCESS_THRESHOLD_PCT,
+    coast_growth_paths,
     compute_curve,
     compute_mc_net_worth_fan,
     find_coast_number,
@@ -568,6 +569,38 @@ def render_coast(coast, current_portfolio, target_age):
         f'<span class="safespend-sep">·</span> '
         f"you have {format_currency(current_portfolio)} today</div>"
         f'<div class="safespend-delta {status}">{message}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_coast_progress(coast, current_portfolio):
+    """Horizontal progress bar: today's balance against the coast number.
+
+    A one-glance read of how close the portfolio is to the point where saving
+    becomes optional. Once today's balance clears the line the bar fills and
+    flips green; otherwise it shows the fraction banked so far.
+    """
+    if not coast or coast <= 0:
+        return
+    pct = max(0.0, min(current_portfolio / coast, 1.0))
+    reached = current_portfolio >= coast
+    status = "good" if reached else "neutral"
+    pct_label = "100%" if reached else f"{pct * 100:.0f}%"
+    headline = "Coast number reached" if reached else f"{pct_label} of the way there"
+    st.markdown(
+        f'<div class="coast-progress {status}">'
+        f'<div class="coast-progress-top">'
+        f'<span class="coast-progress-label">{headline}</span>'
+        f'<span class="coast-progress-pct">{pct_label}</span>'
+        f"</div>"
+        f'<div class="coast-progress-track">'
+        f'<div class="coast-progress-fill {status}" style="width:{pct * 100:.1f}%"></div>'
+        f"</div>"
+        f'<div class="coast-progress-scale">'
+        f'<span>{format_currency(current_portfolio)} today</span>'
+        f'<span>{format_currency(coast)} to coast</span>'
+        f"</div>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -1151,6 +1184,60 @@ def plot_scenario_comparison(comparison_runs):
     return fig
 
 
+def plot_coast_growth(ages, coast_line, portfolio_line, coast_age, current_age, target_age):
+    """Coast FIRE crossover chart.
+
+    The coast line is the balance needed at each age to stop saving and still
+    retire on time; your savings (with contributions) climb to meet it. Where
+    they cross is the age saving becomes optional — shaded green beyond it.
+    """
+    apply_chart_style()
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ages = np.asarray(ages)
+    coast_line = np.asarray(coast_line)
+    portfolio_line = np.asarray(portfolio_line)
+
+    # Shade the cushion: where your savings sit above the coast line you've
+    # cleared it and could downshift.
+    ax.fill_between(
+        ages, coast_line, portfolio_line, where=portfolio_line >= coast_line,
+        color=THEME["success"], alpha=0.13, interpolate=True,
+    )
+    ax.plot(
+        ages, coast_line, linestyle="--", color=THEME["threshold"],
+        linewidth=1.6, alpha=0.95, label="Coast number (left untouched)",
+    )
+    _glow_line(ax, ages, portfolio_line, THEME["primary"], label="Your savings (with contributions)")
+
+    ax.axvline(
+        target_age, linestyle=":", color=THEME["accent"], alpha=0.85,
+        linewidth=1.2, label=f"Retire @ {target_age}",
+    )
+    if coast_age is not None:
+        idx = int(np.where(ages == coast_age)[0][0])
+        ax.plot(coast_age, portfolio_line[idx], "o", color=THEME["success"], markersize=8, zorder=6)
+        label = "Already coasting" if coast_age <= current_age else f"Coast age {coast_age}"
+        ax.annotate(
+            label,
+            xy=(coast_age, portfolio_line[idx]),
+            xytext=(10, -16 if coast_age <= current_age else 12),
+            textcoords="offset points",
+            fontsize=9,
+            color=THEME["success"],
+            fontweight="600",
+        )
+
+    ax.set_xlabel("Age")
+    ax.set_ylabel("Portfolio Value ($)")
+    ax.set_title("When does saving for retirement become optional?")
+    ax.set_ylim(bottom=0)
+    dollar_axis(ax)
+    ax.grid(True, alpha=0.22)
+    ax.legend(loc="upper left", fontsize=8, frameon=True)
+    fig.tight_layout()
+    return fig
+
+
 def planned_career_years(cfg, target_age):
     years_until = target_age - cfg["current_age"]
     total = cfg["years_already_worked"] + years_until
@@ -1663,6 +1750,24 @@ with main_body.container():
             "for retirement becomes optional.",
         )
         render_coast(coast_number, cfg["starting_amount"], target_age)
+        if coast_number:
+            render_coast_progress(coast_number, cfg["starting_amount"])
+            coast_ages, coast_line, portfolio_line, coast_age = coast_growth_paths(
+                cfg, coast_number, target_age, cfg["mean_return"],
+            )
+            coast_fig = plot_coast_growth(
+                coast_ages, coast_line, portfolio_line, coast_age,
+                cfg["current_age"], target_age,
+            )
+            render_chart_with_download(
+                coast_fig, file_name="coast_growth.png", label="Download coast chart",
+            )
+            st.caption(
+                "Both lines grow at your expected return. The dashed line is the coast "
+                "number compounding untouched to the retirement nest egg; the solid line "
+                "is today's balance plus your contributions. Where they meet is the age "
+                "you could stop saving and let the rest ride."
+            )
         st.caption(
             "Coasting assumes you keep working and cover your own expenses until "
             "retirement, so the balance is neither added to nor drawn from in the "

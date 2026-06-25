@@ -360,6 +360,55 @@ html, body, [class*="css"] {
 .safespend-delta.warn { color: #f87171; }
 .safespend-delta.neutral { color: #a3a3a3; }
 
+/* Coast progress bar */
+.coast-progress {
+    margin: -0.5rem 0 1.4rem;
+}
+.coast-progress-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.4rem;
+}
+.coast-progress-label {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #d4d4d4;
+}
+.coast-progress.good .coast-progress-label { color: #34d399; }
+.coast-progress-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #a3a3a3;
+}
+.coast-progress.good .coast-progress-pct { color: #34d399; }
+.coast-progress-track {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+.coast-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #db2777, #ec4899);
+    transition: width 0.4s ease;
+}
+.coast-progress-fill.good {
+    background: linear-gradient(90deg, #059669, #34d399);
+}
+.coast-progress-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.35rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.7rem;
+    color: #737373;
+}
+
 /* Section headers (main area) */
 [data-testid="stAppViewContainer"] .main h3,
 [data-testid="stAppViewContainer"] .main h2 {

@@ -141,6 +141,11 @@ The card compares the coast number to what you have today:
 
 Because it zeroes contributions internally, the coast number is independent of your current savings rate; it depends on your portfolio, spending, target age, returns, and Social Security.
 
+Two visuals make the milestone concrete:
+
+- A **progress bar** showing how far today's balance has come toward the coast number — filled and green once you've cleared it.
+- A **crossover chart** (*"When does saving for retirement become optional?"*) plotting two trajectories that both compound at your expected return: the dashed **coast line** is the coast number left untouched as it grows to the retirement nest egg, and the solid **your savings** line is today's balance plus continued contributions. Where they meet is your **coast age** — the point you could stop saving — with the cushion beyond it shaded green. If you're already past the line today, it reads *Already coasting*.
+
 ### 4. Success curve
 
 The success curve uses Monte Carlo simulation: random annual returns are sampled from a log-normal distribution. **Success** means the portfolio stays positive through your planning horizon.
