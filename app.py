@@ -636,7 +636,7 @@ def render_coast_kpis(coast_age, current_age, target_age, stop_now_odds):
         f"""
         <div class="kpi-grid coast-kpis">
             <div class="kpi-card">
-                <div class="kpi-label">Coast age · {SUCCESS_THRESHOLD_PCT}% odds</div>
+                <div class="kpi-label">Coast age · {SUCCESS_THRESHOLD_PCT}% confidence</div>
                 <div class="kpi-value {age_cls}">{age_val}</div>
             </div>
             <div class="kpi-card">
