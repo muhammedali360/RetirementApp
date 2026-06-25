@@ -526,6 +526,67 @@ def find_max_sustainable_spending(
     return int(best)
 
 
+def find_coast_number(
+    cfg, retirement_age, mean_return, volatility,
+    target=SUCCESS_THRESHOLD, seed=None, step=10_000,
+):
+    """Smallest portfolio held *today* that still clears `target` success at
+    `retirement_age` with **no further retirement contributions** — the Coast
+    FIRE number.
+
+    "Coasting" means you stop saving but keep working and covering your own
+    expenses until retirement, so career years still accrue toward Social
+    Security; only `annual_contribution` is zeroed. Compared against today's
+    `starting_amount`, it answers a single decision: *can I stop contributing
+    now and still retire on time?*
+
+    Success rises monotonically with the starting balance (every trial's net
+    worth is a strictly increasing function of where it starts, since the
+    log-normal growth factor is always positive), so a binary search on a
+    `step` grid lands on the boundary. A single shared returns draw keeps every
+    probe apples-to-apples and fast.
+
+    Returns dollars rounded UP to the nearest `step` — so the number itself
+    always clears the target — or None if even an extreme balance misses it
+    (e.g. spending so high no nest egg survives the drawdown).
+    """
+    n_years = cfg["max_age"] - cfg["current_age"] + 1
+    returns = generate_returns(mean_return, volatility, cfg["trials"], n_years, seed)
+    years_worked = cfg["years_already_worked"] + max(retirement_age - cfg["current_age"], 0)
+    ss_income = social_security_income(cfg, years_worked)
+
+    def success(start):
+        trial_cfg = dict(cfg, starting_amount=float(start), annual_contribution=0)
+        return simulate_batch(
+            trial_cfg, retirement_age, mean_return, volatility,
+            ss_income, cfg["trials"], returns=returns,
+        )
+
+    # Expand an upper bound until a balance clearly clears the target, seeding
+    # from today's portfolio so an already-coasting plan converges in a probe or
+    # two. A huge balance makes withdrawals negligible, so success -> 1.0 and
+    # the loop terminates unless the target is set above what the sim can reach.
+    base = max(step, int(np.ceil(max(cfg.get("starting_amount", step), step) / step)) * step)
+    hi = base
+    for _ in range(40):
+        if success(hi) >= target:
+            break
+        hi *= 2
+    else:
+        return None  # target unreachable within the search ceiling
+
+    # Binary search the grid for the smallest balance that still clears target.
+    lo_k, hi_k, best = 0, hi // step, int(hi)
+    while lo_k <= hi_k:
+        mid_k = (lo_k + hi_k) // 2
+        if success(mid_k * step) >= target:
+            best = mid_k * step
+            hi_k = mid_k - 1
+        else:
+            lo_k = mid_k + 1
+    return int(best)
+
+
 # -------------------------
 # NET WORTH PROJECTION (deterministic overlay)
 # -------------------------
