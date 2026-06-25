@@ -408,6 +408,64 @@ html, body, [class*="css"] {
     font-size: 0.7rem;
     color: #737373;
 }
+.coast-kpis {
+    margin-bottom: 1.4rem;
+}
+
+/* Coast compounding split bar */
+.coast-split {
+    margin: 0.9rem 0 0.5rem;
+}
+.coast-split-head {
+    font-size: 0.86rem;
+    color: #d4d4d4;
+    line-height: 1.45;
+    margin-bottom: 0.55rem;
+}
+.coast-split-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: #34d399;
+}
+.coast-split-track {
+    display: flex;
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.06);
+}
+.coast-split-seg {
+    height: 100%;
+}
+.coast-split-seg.principal {
+    background: linear-gradient(90deg, #db2777, #ec4899);
+}
+.coast-split-seg.growth {
+    background: linear-gradient(90deg, #059669, #34d399);
+}
+.coast-split-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.2rem;
+    margin-top: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.74rem;
+    color: #a3a3a3;
+}
+.coast-split-key {
+    display: inline-flex;
+    align-items: center;
+}
+.coast-split-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    margin-right: 0.4rem;
+}
+.coast-split-dot.principal { background: #ec4899; }
+.coast-split-dot.growth { background: #34d399; }
 
 /* Section headers (main area) */
 [data-testid="stAppViewContainer"] .main h3,

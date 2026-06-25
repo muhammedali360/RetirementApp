@@ -606,6 +606,84 @@ def render_coast_progress(coast, current_portfolio):
     )
 
 
+def render_coast_kpis(coast_age, current_age, target_age, annual_contribution):
+    """Three compact stats translating the coast age into a decision.
+
+    Turns the abstract crossover into *when* saving becomes optional, *how many
+    more years* of saving that leaves, and the lifetime contributions you'd be
+    free to skip from that point on.
+    """
+    if coast_age is None:
+        # Portfolio never catches the line by retirement — saving never becomes
+        # optional on the current plan.
+        age_val, age_cls = f"After {target_age}", "neutral"
+        years_val, years_cls = f"{max(target_age - current_age, 0)}+ yrs", "neutral"
+        freed_val, freed_cls = "$0", "neutral"
+    else:
+        saving_years = max(coast_age - current_age, 0)
+        freed = annual_contribution * max(target_age - coast_age, 0)
+        age_val = "Now" if coast_age <= current_age else str(coast_age)
+        age_cls = "good"
+        years_val = f"{saving_years} yr" if saving_years == 1 else f"{saving_years} yrs"
+        years_cls = "good" if saving_years == 0 else "neutral"
+        freed_val = format_currency(freed)
+        freed_cls = "good" if freed > 0 else "neutral"
+    st.markdown(
+        f"""
+        <div class="kpi-grid coast-kpis">
+            <div class="kpi-card">
+                <div class="kpi-label">Coast age</div>
+                <div class="kpi-value {age_cls}">{age_val}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Saving years left</div>
+                <div class="kpi-value {years_cls}">{years_val}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Contributions freed</div>
+                <div class="kpi-value {freed_cls}">{freed_val}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_coast_compounding(coast, nest_egg, target_age):
+    """Stacked bar splitting the future nest egg into your money vs. growth.
+
+    The coast number is what you hold today; the rest of the retirement nest
+    egg is pure compounding it earns untouched. Showing the split makes the
+    Coast FIRE idea concrete — most of the finish line is growth you haven't
+    earned yet.
+    """
+    if not coast or coast <= 0 or nest_egg <= coast:
+        return
+    growth = nest_egg - coast
+    growth_pct = growth / nest_egg
+    principal_pct = coast / nest_egg
+    st.markdown(
+        f'<div class="coast-split">'
+        f'<div class="coast-split-head">'
+        f'<span class="coast-split-pct">{growth_pct * 100:.0f}%</span> of your '
+        f'{format_currency(nest_egg)} nest egg at age {target_age} is growth you '
+        f"haven't earned yet"
+        f"</div>"
+        f'<div class="coast-split-track">'
+        f'<div class="coast-split-seg principal" style="width:{principal_pct * 100:.1f}%"></div>'
+        f'<div class="coast-split-seg growth" style="width:{growth_pct * 100:.1f}%"></div>'
+        f"</div>"
+        f'<div class="coast-split-legend">'
+        f'<span class="coast-split-key"><span class="coast-split-dot principal"></span>'
+        f"{format_currency(coast)} you hold today</span>"
+        f'<span class="coast-split-key"><span class="coast-split-dot growth"></span>'
+        f"{format_currency(growth)} from compounding</span>"
+        f"</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_skeleton():
     st.markdown(
         """
@@ -1755,6 +1833,9 @@ with main_body.container():
             coast_ages, coast_line, portfolio_line, coast_age = coast_growth_paths(
                 cfg, coast_number, target_age, cfg["mean_return"],
             )
+            render_coast_kpis(
+                coast_age, cfg["current_age"], target_age, cfg["annual_contribution"],
+            )
             coast_fig = plot_coast_growth(
                 coast_ages, coast_line, portfolio_line, coast_age,
                 cfg["current_age"], target_age,
@@ -1768,6 +1849,7 @@ with main_body.container():
                 "is today's balance plus your contributions. Where they meet is the age "
                 "you could stop saving and let the rest ride."
             )
+            render_coast_compounding(coast_number, coast_line[-1], target_age)
         st.caption(
             "Coasting assumes you keep working and cover your own expenses until "
             "retirement, so the balance is neither added to nor drawn from in the "
