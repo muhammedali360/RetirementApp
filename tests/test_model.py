@@ -368,6 +368,77 @@ def test_find_max_sustainable_spending_degenerate_returns_none(cfg):
 
 
 # -------------------------
+# COAST FIRE NUMBER
+# -------------------------
+def _coast_success(cfg, retirement_age, start, mean_return, volatility, seed):
+    """Success at a fixed starting balance with contributions zeroed, sharing the
+    solver's seed so the returns draw (and probability) match exactly."""
+    years_worked = cfg["years_already_worked"] + max(retirement_age - cfg["current_age"], 0)
+    ss_income = model.social_security_income(cfg, years_worked)
+    trial_cfg = dict(cfg, starting_amount=float(start), annual_contribution=0)
+    return model.simulate_batch(
+        trial_cfg, retirement_age, mean_return, volatility,
+        ss_income=ss_income, trials=cfg["trials"], seed=seed,
+    )
+
+
+def test_find_coast_number_returns_int_or_none(cfg):
+    result = model.find_coast_number(cfg, 65, 0.06, 0.12, seed=23)
+    assert result is None or isinstance(result, int)
+
+
+def test_find_coast_number_seed_reproducible(cfg):
+    a = model.find_coast_number(cfg, 65, 0.06, 0.12, seed=3)
+    b = model.find_coast_number(cfg, 65, 0.06, 0.12, seed=3)
+    assert a == b
+
+
+def test_find_coast_number_is_multiple_of_step(cfg):
+    coast = model.find_coast_number(cfg, 65, 0.06, 0.12, seed=5, step=25_000)
+    assert coast % 25_000 == 0
+
+
+def test_find_coast_number_lands_on_boundary(cfg):
+    # The returned balance clears the target with no further contributions, and
+    # one grid step less does not — it is the *minimum* coast portfolio.
+    target, seed, age, step = 0.90, 41, 65, 10_000
+    coast = model.find_coast_number(
+        cfg, age, 0.06, 0.12, target=target, seed=seed, step=step,
+    )
+    assert coast is not None and coast > 0
+    assert _coast_success(cfg, age, coast, 0.06, 0.12, seed) >= target
+    if coast - step >= 0:
+        assert _coast_success(cfg, age, coast - step, 0.06, 0.12, seed) < target
+
+
+def test_find_coast_number_ignores_contributions(cfg):
+    # Coasting zeroes savings internally, so the current contribution rate must
+    # not change the answer.
+    saver = dict(cfg, annual_contribution=10_000)
+    super_saver = dict(cfg, annual_contribution=90_000)
+    assert (
+        model.find_coast_number(saver, 65, 0.06, 0.12, seed=7)
+        == model.find_coast_number(super_saver, 65, 0.06, 0.12, seed=7)
+    )
+
+
+def test_find_coast_number_more_spending_needs_bigger_coast(cfg):
+    lean = dict(cfg, annual_spending=60_000)
+    lavish = dict(cfg, annual_spending=120_000)
+    c_lean = model.find_coast_number(lean, 65, 0.06, 0.12, seed=13)
+    c_lavish = model.find_coast_number(lavish, 65, 0.06, 0.12, seed=13)
+    assert c_lavish > c_lean
+
+
+def test_find_coast_number_later_retirement_lowers_coast(cfg):
+    # More years for the existing balance to compound before drawdown means a
+    # smaller portfolio is needed today to coast.
+    early = model.find_coast_number(cfg, 55, 0.06, 0.12, seed=17)
+    late = model.find_coast_number(cfg, 70, 0.06, 0.12, seed=17)
+    assert late < early
+
+
+# -------------------------
 # DETERMINISTIC NET WORTH
 # -------------------------
 def test_simulate_net_worth_success(cfg):

@@ -15,6 +15,7 @@ from model import (
     SUCCESS_THRESHOLD_PCT,
     compute_curve,
     compute_mc_net_worth_fan,
+    find_coast_number,
     find_max_sustainable_spending,
     find_min_years_worked,
     guardrail_income_band,
@@ -510,6 +511,68 @@ def render_safe_spend(safe_spend, current_spend, target_age, withdrawal_rate, ba
     )
 
 
+def coast_state(coast, current_portfolio, target_age):
+    """Compare today's portfolio to the coast number → (status, message)."""
+    if coast is None:
+        return "warn", (
+            f"No nest egg coasts to age {target_age} at {SUCCESS_THRESHOLD_PCT}% "
+            "without more savings — spending outpaces any starting balance, so "
+            "trim spending or retire later."
+        )
+    gap = coast - current_portfolio
+    if gap <= 0:
+        return "good", (
+            f"▲ You're coasting — {format_currency(-gap)} past the line. You could stop "
+            f"saving today and let it grow untouched — no contributions, no withdrawals — "
+            f"until you retire at {target_age}."
+        )
+    return "neutral", (
+        f"▼ {format_currency(gap)} to go. Keep contributing until your portfolio reaches "
+        f"this number; from there it can grow untouched to retirement at {target_age}."
+    )
+
+
+def render_coast(coast, current_portfolio, target_age):
+    """Headline 'have I saved enough to stop?' card — the Coast FIRE number.
+
+    Shows the smallest portfolio that, with no further contributions, still
+    clears the success threshold at the target age, and compares it to today's
+    balance so the user knows whether they can downshift now or how far they
+    have left.
+    """
+    if coast is None:
+        status, message = coast_state(coast, current_portfolio, target_age)
+        st.markdown(
+            f'<div class="safespend-card {status}">'
+            f'<div class="signal-header">'
+            f'<span class="signal-dot {status}"></span>'
+            f'<span class="signal-label">Coast number</span>'
+            f'<span class="safespend-conf">{SUCCESS_THRESHOLD_PCT}% confidence</span>'
+            f"</div>"
+            f'<div class="safespend-delta {status}">{message}</div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    status, message = coast_state(coast, current_portfolio, target_age)
+    st.markdown(
+        f'<div class="safespend-card {status}">'
+        f'<div class="signal-header">'
+        f'<span class="signal-dot {status}"></span>'
+        f'<span class="signal-label">Coast number</span>'
+        f'<span class="safespend-conf">{SUCCESS_THRESHOLD_PCT}% confidence · grows untouched</span>'
+        f"</div>"
+        f'<div class="safespend-value">{format_currency(coast)}</div>'
+        f'<div class="safespend-sub">balance that, left untouched (no contributions, '
+        f"no withdrawals), still funds retirement at age {target_age} "
+        f'<span class="safespend-sep">·</span> '
+        f"you have {format_currency(current_portfolio)} today</div>"
+        f'<div class="safespend-delta {status}">{message}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_skeleton():
     st.markdown(
         """
@@ -879,6 +942,16 @@ def cached_model(fn_name, cfg_key, args_key):
 
     if fn_name == "max_spend":
         return find_max_sustainable_spending(
+            cfg,
+            args["retirement_age"],
+            args["mean_return"],
+            args["volatility"],
+            target=args.get("target", SUCCESS_THRESHOLD),
+            seed=args.get("seed"),
+        )
+
+    if fn_name == "coast":
+        return find_coast_number(
             cfg,
             args["retirement_age"],
             args["mean_return"],
@@ -1375,6 +1448,11 @@ with st.spinner(f"Running {trial_count:,} Monte Carlo trials…"):
         cfg_key,
         json.dumps({"retirement_age": target_age, **model_args}),
     )
+    coast_number = cached_model(
+        "coast",
+        cfg_key,
+        json.dumps({"retirement_age": target_age, **model_args}),
+    )
 
 smart_spending_on = cfg.get("withdrawal_strategy") == "guardrails"
 fixed_ages = fixed_probs = None
@@ -1463,6 +1541,8 @@ with main_body.container():
             safe_spend_wr,
             band=spend_band,
         )
+
+        render_coast(coast_number, cfg["starting_amount"], target_age)
 
         show_section(
             "Success probability curve",

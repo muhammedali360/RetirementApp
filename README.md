@@ -114,21 +114,36 @@ The main page shows, in order:
 3. **Signal** — plain-language summary of your plan, including best what-if levers when relevant
 4. **KPIs** — success probability at target age, earliest safe age, and withdrawal rate at target age
 5. **Sustainable spending** — the largest annual budget that still clears the success threshold at your target age, with its implied withdrawal rate and a status-aware delta vs. your plan (headroom when you can spend more, trim-to-target when you are over)
-6. **Success probability curve** — Monte Carlo success vs. retirement age, with a **Chart ends at age** slider to zoom the x-axis and a **Download chart PNG** button
-7. **Safe-age summary** — message below the curve when any age reaches ≥90% success (with an SS note if the earliest safe age aligns with your claim age)
-8. **Sequence-of-returns risk** (expander) — Monte Carlo fan chart at your target retirement age, with **Adjust for inflation** toggle and **Download chart PNG**
-9. **Career years** — shown only when Social Security work history is a constraint (see section 5)
-10. **What if** (expander) — quick scenario changes without editing the sidebar
-11. **Compare scenarios** (expander) — overlay saved plans or profile presets
-12. **Export** — JSON config and PDF report
+6. **Coast number** — the smallest portfolio you'd need *today* that, left untouched (no contributions, no withdrawals), still grows enough to retire on time, compared to what you have now (see section 3)
+7. **Success probability curve** — Monte Carlo success vs. retirement age, with a **Chart ends at age** slider to zoom the x-axis and a **Download chart PNG** button
+8. **Safe-age summary** — message below the curve when any age reaches ≥90% success (with an SS note if the earliest safe age aligns with your claim age)
+9. **Sequence-of-returns risk** (expander) — Monte Carlo fan chart at your target retirement age, with **Adjust for inflation** toggle and **Download chart PNG**
+10. **Career years** — shown only when Social Security work history is a constraint (see section 6)
+11. **What if** (expander) — quick scenario changes without editing the sidebar
+12. **Compare scenarios** (expander) — overlay saved plans or profile presets
+13. **Export** — JSON config and PDF report
 
-### 3. Success curve
+### 3. Coast number
+
+The **Coast number** is the smallest portfolio you'd need *today* so that, left **untouched — no further contributions and no withdrawals** — it still grows enough to clear the ≥90% success threshold at your target retirement age. This is the "Coast FIRE" milestone: the point where your existing balance can coast to retirement on compounding alone.
+
+It's solved by binary search: contributions are zeroed and the starting balance is varied until it lands on the lowest amount that still passes, all against a single shared Monte Carlo returns draw. "Coasting" assumes you keep working and covering your own expenses until retirement — so the portfolio is neither added to nor drawn from in the meantime, and career years still accrue toward Social Security. Only saving stops; withdrawals don't begin until your target age.
+
+The card compares the coast number to what you have today:
+
+- **Coasting** (green) when your portfolio already meets or beats it — you could stop contributing now and still retire on time, with the surplus shown.
+- **Gap to go** (neutral) when you're below it — the dollar amount left before saving becomes optional.
+- A rare **warning** when no starting balance coasts at all (spending outpaces any nest egg) — trim spending or retire later.
+
+Because it zeroes contributions internally, the coast number is independent of your current savings rate; it depends on your portfolio, spending, target age, returns, and Social Security.
+
+### 4. Success curve
 
 The success curve uses Monte Carlo simulation: random annual returns are sampled from a log-normal distribution. **Success** means the portfolio stays positive through your planning horizon.
 
 Safe retirement ages (≥90% success) are evaluated from your current age through `min(85, planning horizon)`. The chart defaults from your current age to roughly your target age + 5; use **Chart ends at age** to zoom in or out.
 
-### 4. Sequence-of-returns risk
+### 5. Sequence-of-returns risk
 
 The fan chart shows portfolio paths if you retire at your **target retirement age**:
 
@@ -139,7 +154,7 @@ The fan chart shows portfolio paths if you retire at your **target retirement ag
 
 This highlights how early-market luck affects outcomes.
 
-### 5. Career years
+### 6. Career years
 
 For your target retirement age, the app finds the minimum total work history needed for ≥90% success and compares it to your plan (years worked so far + years until retirement). Longer careers mainly raise **Social Security** income in this model.
 
@@ -147,7 +162,7 @@ On the main page, this section appears **only when SS work history is a constrai
 
 When shown, you get an on-track info message or a shortfall warning with the gap in years.
 
-### 6. What-if scenarios
+### 7. What-if scenarios
 
 The **What if** expander reruns Monte Carlo with one change at a time:
 
@@ -161,7 +176,7 @@ The **What if** expander reruns Monte Carlo with one change at a time:
 
 Each row shows success probability at your target age and the delta vs. your current plan. Click **Apply** on a row to load that scenario into the sidebar. The Signal narrative may recommend the best levers from this table.
 
-### 7. Compare scenarios
+### 8. Compare scenarios
 
 Overlay success curves on one chart:
 
@@ -172,7 +187,7 @@ The current plan is always included. Use **Download chart PNG** to export the co
 
 To save a plan for comparison: configure inputs, name it under **Save scenario** in the sidebar, and click **Save scenario**.
 
-### 8. Save and export
+### 9. Save and export
 
 - All inputs are **auto-saved** to `scenarios.json` after each run
 - **Download scenario JSON** — export your full config
