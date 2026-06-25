@@ -587,6 +587,44 @@ def find_coast_number(
     return int(best)
 
 
+def coast_growth_paths(cfg, coast, retirement_age, return_rate):
+    """Deterministic year-by-year paths behind the Coast tab chart.
+
+    Two trajectories from today (`current_age`) to `retirement_age`, both
+    compounding at the expected `return_rate`:
+
+    * **coast line** — the coast number left untouched, ``coast * (1+r)**t``.
+      It's the balance you'd need *at each age* to stop saving and still land
+      on the retirement nest egg, so it climbs to the full requirement at
+      `retirement_age`.
+    * **portfolio line** — today's balance projected forward *with* annual
+      contributions, added at the start of each working year and then grown,
+      matching :func:`simulate_net_worth`'s accumulation convention.
+
+    The first age where the contributing portfolio reaches or passes the coast
+    line is the **coast age**: from there, saving for retirement is optional.
+
+    Returns ``(ages, coast_line, portfolio_line, coast_age)``. ``coast_age`` is
+    ``current_age`` when today's balance is already at or above the line, and
+    ``None`` when the portfolio never catches the line by `retirement_age`.
+    """
+    current_age = cfg["current_age"]
+    ages = list(range(current_age, retirement_age + 1))
+    coast_line = [coast * (1 + return_rate) ** (age - current_age) for age in ages]
+
+    portfolio_line = []
+    net_worth = float(cfg["starting_amount"])
+    coast_age = None
+    for age, line in zip(ages, coast_line):
+        if age > current_age:
+            net_worth += cfg["annual_contribution"]
+            net_worth *= (1 + return_rate)
+        portfolio_line.append(net_worth)
+        if coast_age is None and net_worth >= line:
+            coast_age = age
+    return ages, coast_line, portfolio_line, coast_age
+
+
 # -------------------------
 # NET WORTH PROJECTION (deterministic overlay)
 # -------------------------
