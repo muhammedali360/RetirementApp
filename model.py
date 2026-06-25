@@ -587,6 +587,27 @@ def find_coast_number(
     return int(best)
 
 
+def coast_success(cfg, retirement_age, mean_return, volatility, seed=None):
+    """Success probability if you stopped contributing **today** — the
+    "stop-now odds."
+
+    Same simulation as `find_coast_number`'s inner probe, evaluated at today's
+    `starting_amount` with `annual_contribution` zeroed. The coast number is the
+    balance that lifts this to `SUCCESS_THRESHOLD`; this returns where today's
+    balance actually lands, so the two read together as "you're at X% of the
+    target you'd need to coast." Returns a float in [0, 1].
+    """
+    n_years = cfg["max_age"] - cfg["current_age"] + 1
+    returns = generate_returns(mean_return, volatility, cfg["trials"], n_years, seed)
+    years_worked = cfg["years_already_worked"] + max(retirement_age - cfg["current_age"], 0)
+    ss_income = social_security_income(cfg, years_worked)
+    trial_cfg = dict(cfg, annual_contribution=0)
+    return simulate_batch(
+        trial_cfg, retirement_age, mean_return, volatility,
+        ss_income, cfg["trials"], returns=returns,
+    )
+
+
 def coast_growth_paths(cfg, coast, retirement_age, return_rate):
     """Deterministic year-by-year paths behind the Coast tab chart.
 

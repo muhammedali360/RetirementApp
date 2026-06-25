@@ -411,6 +411,32 @@ def test_find_coast_number_lands_on_boundary(cfg):
         assert _coast_success(cfg, age, coast - step, 0.06, 0.12, seed) < target
 
 
+def test_coast_success_is_probability(cfg):
+    odds = model.coast_success(cfg, 65, 0.06, 0.12, seed=9)
+    assert 0.0 <= odds <= 1.0
+
+
+def test_coast_success_matches_starting_balance_probe(cfg):
+    # The stop-now odds are exactly the solver's success at today's balance with
+    # contributions zeroed — same returns draw via the shared seed.
+    odds = model.coast_success(cfg, 65, 0.06, 0.12, seed=9)
+    assert odds == _coast_success(
+        cfg, 65, cfg["starting_amount"], 0.06, 0.12, seed=9
+    )
+
+
+def test_coast_success_brackets_coast_number(cfg):
+    # The coast number is the balance that lifts stop-now odds to the threshold,
+    # so a portfolio below it falls short and one at/above it clears.
+    seed = 9
+    coast = model.find_coast_number(cfg, 65, 0.06, 0.12, target=0.90, seed=seed)
+    assert coast is not None
+    below = dict(cfg, starting_amount=coast - 100_000)
+    at = dict(cfg, starting_amount=coast)
+    assert model.coast_success(below, 65, 0.06, 0.12, seed=seed) < 0.90
+    assert model.coast_success(at, 65, 0.06, 0.12, seed=seed) >= 0.90
+
+
 def test_find_coast_number_ignores_contributions(cfg):
     # Coasting zeroes savings internally, so the current contribution rate must
     # not change the answer.
