@@ -1524,8 +1524,8 @@ with main_body.container():
         withdrawal_rate=withdrawal_rate,
     )
 
-    tab_plan, tab_whatif, tab_compare, tab_export = st.tabs(
-        ["Plan", "What-if", "Compare", "Export"]
+    tab_plan, tab_whatif, tab_coast, tab_compare, tab_export = st.tabs(
+        ["Plan", "What-if", "Coast", "Compare", "Export"]
     )
 
     with tab_plan:
@@ -1541,8 +1541,6 @@ with main_body.container():
             safe_spend_wr,
             band=spend_band,
         )
-
-        render_coast(coast_number, cfg["starting_amount"], target_age)
 
         show_section(
             "Success probability curve",
@@ -1654,6 +1652,21 @@ with main_body.container():
         st.caption(
             "Each row reruns Monte Carlo with one parameter change. "
             "Click Apply to load a scenario into the sidebar."
+        )
+
+    with tab_coast:
+        show_section(
+            "Coast number",
+            "The smallest portfolio you'd need today that, left untouched — no further "
+            "contributions and no withdrawals — still grows enough to retire at age "
+            f"{target_age} with ≥{SUCCESS_THRESHOLD_PCT}% success. Reach it and saving "
+            "for retirement becomes optional.",
+        )
+        render_coast(coast_number, cfg["starting_amount"], target_age)
+        st.caption(
+            "Coasting assumes you keep working and cover your own expenses until "
+            "retirement, so the balance is neither added to nor drawn from in the "
+            "meantime — and career years still accrue toward Social Security."
         )
 
     with tab_compare:
