@@ -152,18 +152,20 @@ def chart_age_range(current_age, target_age):
     return start_age, end_age
 
 
+# Map legacy short codes (and a few synonyms) onto the current display names so
+# saved scenarios and shared URLs created before the rename still resolve.
 PROFILE_ALIASES = {
-    "Early career": "Early",
-    "Mid-career": "Mid",
-    "High net worth": "Mid",
-    "Wealthy": "Mid",
-    "Near retirement": "Pre-retire",
-    "Conservative": "Pre-retire",
+    "Early": "Early career (20s–30s)",
+    "Mid": "Mid-career (40s–50s)",
+    "Pre-retire": "Near retirement (late 50s+)",
+    "High net worth": "Mid-career (40s–50s)",
+    "Wealthy": "Mid-career (40s–50s)",
+    "Conservative": "Near retirement (late 50s+)",
 }
 
 PRESET_PROFILES = {
-    "Early": {
-        "tagline": "Building your foundation",
+    "Early career (20s–30s)": {
+        "tagline": "Building your foundation — small balance, long runway",
         "current_age": 28,
         "starting_amount": 45_000,
         "annual_contribution": 15_000,
@@ -177,8 +179,8 @@ PRESET_PROFILES = {
         "include_social_security": True,
         "social_security_claim_age": 67,
     },
-    "Mid": {
-        "tagline": "Balanced growth and spending",
+    "Mid-career (40s–50s)": {
+        "tagline": "Balanced growth and spending — peak earning years",
         "current_age": 42,
         "starting_amount": 350_000,
         "annual_contribution": 55_000,
@@ -192,8 +194,8 @@ PRESET_PROFILES = {
         "include_social_security": True,
         "social_security_claim_age": 67,
     },
-    "Pre-retire": {
-        "tagline": "Fine-tuning your exit",
+    "Near retirement (late 50s+)": {
+        "tagline": "Fine-tuning your exit — large balance, short runway",
         "current_age": 58,
         "starting_amount": 1_500_000,
         "annual_contribution": 65_000,
@@ -212,7 +214,7 @@ PRESET_PROFILES = {
 # App-level defaults: seeded from the mid-career preset (so a fresh session
 # opens on a balanced, generic profile) plus simulation/UI settings that aren't
 # part of any preset.
-DEFAULT_PROFILE = "Mid"
+DEFAULT_PROFILE = "Mid-career (40s–50s)"
 
 DEFAULT_CFG = {
     **{k: v for k, v in PRESET_PROFILES[DEFAULT_PROFILE].items() if k != "tagline"},
