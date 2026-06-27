@@ -236,6 +236,7 @@ GLOSSARY = {
     "Withdrawal rate": "Annual spending divided by portfolio at retirement — the 4% rule targets ≤4%.",
     "Sequence-of-returns risk": "Bad market returns early in retirement can permanently reduce portfolio durability.",
     "Planning horizon": "The age through which the model checks whether your money lasts (default: 100).",
+    "Return assumptions": "Returns are modeled on a broad stock-market index like the S&P 500 — annual returns are drawn from a log-normal distribution whose average and volatility you set via the preset (or the Market sliders in advanced mode).",
 }
 
 
@@ -1588,6 +1589,10 @@ with st.sidebar:
 
     if advanced_mode:
         with st.expander("Market", expanded=False):
+            st.caption(
+                "Defaults are modeled on a broad stock-market index like the "
+                "S&P 500; annual returns are drawn from a log-normal distribution."
+            )
             mean_return = st.slider("Expected return", 0.0, 0.12, float(cfg["mean_return"]))
             volatility = st.slider("Volatility", 0.0, 0.25, float(cfg["volatility"]))
             cfg["trials"] = st.slider("Simulation trials", 500, 10_000, int(cfg["trials"]))
@@ -1604,6 +1609,10 @@ with st.sidebar:
         mean_return = preset["mean_return"]
         volatility = preset["volatility"]
         cfg["trials"] = 2000
+        st.caption(
+            "Return and volatility presets are modeled on a broad stock-market "
+            "index like the S&P 500."
+        )
 
     with st.expander("Social Security", expanded=False):
         cfg["include_social_security"] = st.toggle(

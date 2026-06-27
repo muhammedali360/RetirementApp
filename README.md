@@ -74,7 +74,7 @@ Toggle **Advanced parameters** to expose inflation, lower spending after 75, cus
 
 #### Simple mode (Advanced parameters off)
 
-**Volatility preset** sets expected return and volatility together:
+**Volatility preset** sets expected return and volatility together. The presets are modeled on a broad stock-market index like the S&P 500:
 
 | Preset | Expected return | Volatility |
 |--------|-----------------|------------|
@@ -96,7 +96,7 @@ With advanced mode on, **Essentials** also shows inflation and spending-after-75
 | **Volatility** | Annual return standard deviation |
 | **Simulation trials** | Monte Carlo paths per retirement age (500–10,000; higher = more accurate, slower) |
 
-Returns are drawn from a **log-normal** distribution.
+Returns are modeled on a broad stock-market index like the S&P 500 and drawn from a **log-normal** distribution.
 
 **More options**
 
