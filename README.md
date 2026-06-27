@@ -122,7 +122,7 @@ Spending grows with inflation from your retirement year onward. **Annual savings
 
 Under **Save scenario**, name your plan and click **Save scenario** to store it for comparison. Use **Load saved scenario** to restore a previously saved plan into the sidebar.
 
-Saved scenarios and your last-run config are written to `scenarios.json` (gitignored — fresh clones start with defaults).
+Saved scenarios and your last-run config are stored **per user, in your own browser** (via `localStorage`), so on a shared/deployed app each visitor sees only their own scenarios and they persist across refreshes. Running locally, they are also mirrored to `scenarios.json` (gitignored) and imported from it on first load, so an existing single user keeps their data. Set `RR_LOCAL=0`/`1` to force cloud/local storage behavior.
 
 ### 2. Read results (main page)
 
@@ -221,10 +221,10 @@ To save a plan for comparison: configure inputs, name it under **Save scenario**
 
 ### 9. Save and export
 
-- All inputs are **auto-saved** to `scenarios.json` after each run
+- All inputs are **auto-saved** per user in your browser after each run (mirrored to `scenarios.json` when running locally)
 - **Download scenario JSON** — export your full config
 - **Download PDF report** — executive summary, assumptions, safe ages, and career-years results
-- On next launch, saved values load automatically from `scenarios.json`
+- On next launch, your saved values load automatically from your browser
 
 ## PDF Report
 
