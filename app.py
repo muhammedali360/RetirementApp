@@ -152,27 +152,6 @@ def chart_age_range(current_age, target_age):
     return start_age, end_age
 
 
-DEFAULT_CFG = {
-    "current_age": 28,
-    "starting_amount": 550_000,
-    "annual_contribution": 50_000,
-    "max_age": 90,
-    "inflation_rate": 0.03,
-    "include_social_security": True,
-    "social_security_claim_age": 67,
-    "years_already_worked": 6,
-    "trials": 2000,
-    "annual_spending": 120_000,
-    "spending_reduction_after_75": 0.0,
-    "mean_return": 0.06,
-    "volatility": 0.12,
-    "target_retirement_age": 65,
-    "advanced_mode": False,
-    "active_profile": None,
-    "show_real_values": False,
-    "withdrawal_strategy": "fixed",
-}
-
 PROFILE_ALIASES = {
     "Early career": "Early",
     "Mid-career": "Mid",
@@ -228,6 +207,21 @@ PRESET_PROFILES = {
         "include_social_security": True,
         "social_security_claim_age": 67,
     },
+}
+
+# App-level defaults: seeded from the mid-career preset (so a fresh session
+# opens on a balanced, generic profile) plus simulation/UI settings that aren't
+# part of any preset.
+DEFAULT_PROFILE = "Mid"
+
+DEFAULT_CFG = {
+    **{k: v for k, v in PRESET_PROFILES[DEFAULT_PROFILE].items() if k != "tagline"},
+    "max_age": 90,
+    "trials": 2000,
+    "advanced_mode": False,
+    "active_profile": DEFAULT_PROFILE,
+    "show_real_values": False,
+    "withdrawal_strategy": "fixed",
 }
 
 GLOSSARY = {
