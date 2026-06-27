@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import os
 from pathlib import Path
 
 import matplotlib.patheffects as pe
@@ -8,6 +9,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 from matplotlib.ticker import FuncFormatter
+
+try:
+    from streamlit_local_storage import LocalStorage
+except ImportError:  # optional dependency; falls back to the on-disk file
+    LocalStorage = None
 
 from model import (
     MODEL_CFG_FIELDS,
@@ -863,7 +869,12 @@ def _migrate_spending_fields(cfg, saved):
         cfg["spending_reduction_after_75"] = 0.0
 
 
-def load_store():
+def _empty_store():
+    return {"last": None, "saved": []}
+
+
+def _load_store_file():
+    """Read the scenario store from the on-disk JSON file (local dev / fallback)."""
     try:
         with SCENARIO_FILE.open("r") as f:
             data = json.load(f)
@@ -871,7 +882,7 @@ def load_store():
         return {"last": None, "saved": _load_legacy_saved()}
     except json.JSONDecodeError:
         st.sidebar.warning("Could not parse scenarios.json — using defaults.")
-        return {"last": None, "saved": []}
+        return _empty_store()
 
     if isinstance(data, dict) and "last" in data:
         return data
@@ -880,14 +891,104 @@ def load_store():
     return {"last": data, "saved": saved}
 
 
+def _save_store_file(store):
+    with SCENARIO_FILE.open("w") as f:
+        json.dump(store, f, indent=2)
+
+
+# --- Per-user persistence -------------------------------------------------
+# When deployed (e.g. Streamlit Community Cloud) the server filesystem is shared
+# across every visitor and is wiped on each restart, so storing scenarios in a
+# server-side file would mean all users see and overwrite each other's data and
+# lose it on reboot. Instead each visitor's scenarios live in their own browser
+# via localStorage, keeping them private and durable. Running locally, the
+# on-disk JSON file is used (and imported into localStorage on first load) so an
+# existing single user keeps their saved scenarios.
+_LS_COMPONENT_KEY = "rr_local_storage"      # Streamlit widget key for the component
+_LS_ITEM_KEY = "retirement_runway_store"    # localStorage key holding the JSON store
+# Streamlit Community Cloud checks the repo out under /mount/src; treat anything
+# else as a local run where the on-disk file is the user's own data. Set RR_LOCAL
+# (1/0) to override the auto-detection if needed.
+_RR_LOCAL_ENV = os.environ.get("RR_LOCAL")
+if _RR_LOCAL_ENV is not None:
+    IS_LOCAL = _RR_LOCAL_ENV.strip().lower() not in ("", "0", "false", "no")
+else:
+    IS_LOCAL = not str(Path(__file__).resolve()).startswith("/mount/")
+
+
+def _ls_handle():
+    """Return (LocalStorage handle, ready).
+
+    ``ready`` is True once the browser's localStorage has actually been read: the
+    first script run of a session returns empty before the browser responds and
+    then triggers an automatic rerun. Returns (None, True) when the component is
+    unavailable so callers fall back to the on-disk file.
+    """
+    if LocalStorage is None:
+        return None, True
+    ready = _LS_COMPONENT_KEY in st.session_state
+    return LocalStorage(key=_LS_COMPONENT_KEY), ready
+
+
+def load_store():
+    ls, ready = _ls_handle()
+    if ls is None:
+        return _load_store_file()
+
+    if st.session_state.get("_store_synced"):
+        return st.session_state["_store"]
+
+    if not ready:
+        # Browser not read yet: serve transient defaults for this one render
+        # without caching them, so real values load on the automatic rerun.
+        return _load_store_file() if IS_LOCAL else _empty_store()
+
+    raw = ls.getItem(_LS_ITEM_KEY)
+    if raw:
+        try:
+            store = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            store = _empty_store()
+    elif IS_LOCAL:
+        # First visit in this browser: import the existing local file once.
+        store = _load_store_file()
+    else:
+        store = _empty_store()
+
+    st.session_state["_store"] = store
+    st.session_state["_store_synced"] = True
+    return store
+
+
 def save_store(last=None, saved=None):
     store = load_store()
     if last is not None:
         store["last"] = last
     if saved is not None:
         store["saved"] = saved
-    with SCENARIO_FILE.open("w") as f:
-        json.dump(store, f, indent=2)
+
+    ls, ready = _ls_handle()
+    if ls is None:
+        _save_store_file(store)
+        return
+    if not ready:
+        # Don't persist before the browser has been read, or we'd clobber the
+        # user's stored scenarios with transient defaults.
+        return
+
+    st.session_state["_store"] = store
+    st.session_state["_store_synced"] = True
+    payload = json.dumps(store)
+    if st.session_state.get("_store_written") == payload:
+        return
+    # Each setItem needs a unique widget key when more than one write happens in
+    # the same run (e.g. saving a scenario and the end-of-run config autosave).
+    n = st.session_state.get("_ls_write_count", 0) + 1
+    st.session_state["_ls_write_count"] = n
+    ls.setItem(_LS_ITEM_KEY, payload, key=f"rr_ls_set_{n}")
+    st.session_state["_store_written"] = payload
+    if IS_LOCAL:
+        _save_store_file(store)
 
 
 def save_cfg(cfg):
