@@ -1,6 +1,10 @@
 # Retirement Runway — Retirement Probability Simulator
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://retirementrunwayapp.streamlit.app/)
+
 A Monte Carlo retirement planning tool with a Streamlit dashboard. It estimates the probability that your portfolio lasts through retirement at different retirement ages, finds the minimum career length needed for 90% success, and visualizes sequence-of-returns risk.
+
+**▶️ Try it live (no install): [retirementrunwayapp.streamlit.app](https://retirementrunwayapp.streamlit.app/)**
 
 ## Requirements
 
@@ -30,6 +34,23 @@ streamlit run app.py
 ```
 
 Streamlit opens the app in your browser (usually `http://localhost:8501`).
+
+## Deploy (free public link)
+
+The app is hosted for free on **Streamlit Community Cloud**: **https://retirementrunwayapp.streamlit.app/**
+
+To deploy your own copy (or re-create this one) for $0:
+
+1. Fork/push this repo to GitHub (it's already public — no secrets or database needed).
+2. Sign in to [share.streamlit.io](https://share.streamlit.io) with GitHub.
+3. **Create app → Deploy a public app from GitHub**, then set:
+   - **Repository:** `muhammedali360/RetirementApp`
+   - **Branch:** `main`
+   - **Main file path:** `app.py`
+4. Under **Advanced settings**, set **Python version → 3.12** (matches `runtime.txt`).
+5. **Deploy.** Every `git push` to the branch auto-redeploys.
+
+> **Note on pinning Python:** This repo includes a `runtime.txt` (`python-3.12.3`). Other free hosts (Render, Hugging Face Spaces, Heroku) honor it automatically. Streamlit Community Cloud **ignores `runtime.txt`** and instead reads the Python version from the *Advanced settings* dropdown at deploy time — so select **3.12** there. The free tier sleeps after inactivity and wakes on the next visit (a few seconds).
 
 ## How to Use
 
