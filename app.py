@@ -176,6 +176,12 @@ PROFILE_ALIASES = {
     "Conservative": "Pre-retire",
 }
 
+PROFILE_LABELS = {
+    "Early": "Early career",
+    "Mid": "Mid-career",
+    "Pre-retire": "Near retirement",
+}
+
 PRESET_PROFILES = {
     "Early": {
         "tagline": "Building your foundation",
@@ -441,7 +447,7 @@ def render_hero(
     status_label, status_class = hero_status(target_prob, on_track)
     chips = []
     if active_profile and active_profile in PRESET_PROFILES:
-        chips.append(f'<span class="hero-chip">{active_profile}</span>')
+        chips.append(f'<span class="hero-chip">{PROFILE_LABELS.get(active_profile, active_profile)}</span>')
     chips.append(f'<span class="hero-chip hero-chip-mono">Age {current_age} → {target_age}</span>')
     chips.append(
         f'<span class="hero-chip hero-chip-mono">{format_currency(portfolio)} portfolio</span>'
@@ -1716,6 +1722,7 @@ with st.sidebar:
         "Profile preset",
         options=profile_names,
         index=profile_names.index(active) if active in PRESET_PROFILES else None,
+        format_func=lambda k: PROFILE_LABELS.get(k, k),
         placeholder="Choose a profile…",
     )
     if profile_choice:
@@ -1726,7 +1733,7 @@ with st.sidebar:
         st.rerun()
 
     if active in PRESET_PROFILES:
-        if st.button(f"↺ Reset to {active} preset", width="stretch"):
+        if st.button(f"↺ Reset to {PROFILE_LABELS.get(active, active)} preset", width="stretch"):
             apply_profile(cfg, active)
             save_cfg(cfg)
             st.rerun()
