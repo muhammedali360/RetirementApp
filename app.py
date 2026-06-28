@@ -430,15 +430,15 @@ def render_kpi_row(
         <div class="kpi-sticky">
             <div class="kpi-grid">
                 <div class="kpi-card">
-                    <div class="kpi-label">Success rate · age {target_age}</div>
+                    <div class="kpi-label" title="{GLOSSARY['Success rate']}">Success rate · age {target_age}<span class="kpi-info">ⓘ</span></div>
                     <div class="kpi-value {prob_cls}">{prob_val}</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">Earliest safe age</div>
+                    <div class="kpi-label" title="{GLOSSARY['Earliest safe age']}">Earliest safe age<span class="kpi-info">ⓘ</span></div>
                     <div class="kpi-value {earliest_cls}">{earliest}</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">Withdrawal rate · age {target_age}</div>
+                    <div class="kpi-label" title="{GLOSSARY['Withdrawal rate']}">Withdrawal rate · age {target_age}<span class="kpi-info">ⓘ</span></div>
                     <div class="kpi-value {wr_cls}">{wr_val}</div>
                 </div>
             </div>
@@ -1513,6 +1513,12 @@ with st.sidebar:
         save_cfg(cfg)
         st.rerun()
 
+    if active in PRESET_PROFILES:
+        if st.button(f"↺ Reset to {active} preset", width="stretch"):
+            apply_profile(cfg, active)
+            save_cfg(cfg)
+            st.rerun()
+
     with st.expander("Definitions", expanded=False):
         for term, definition in GLOSSARY.items():
             st.markdown(f"**{term}** — {definition}")
@@ -1537,53 +1543,40 @@ with st.sidebar:
     cfg["withdrawal_strategy"] = "guardrails" if smart_spending else "fixed"
 
     with st.expander("Essentials", expanded=True):
-        with st.form("essentials_form", border=False):
-            essentials_age = st.number_input(
-                "Current age", 18, 80, int(cfg["current_age"]),
+        st.caption("Changes apply instantly.")
+        cfg["current_age"] = st.number_input(
+            "Current age", 18, 80, int(cfg["current_age"]),
+        )
+        cfg["starting_amount"] = st.number_input(
+            "Portfolio today ($)", 0, 10_000_000, int(cfg["starting_amount"]),
+        )
+        cfg["annual_contribution"] = st.number_input(
+            "Annual savings ($)", 0, 500_000, int(cfg["annual_contribution"]),
+        )
+        cfg["target_retirement_age"] = st.number_input(
+            "Target retirement age",
+            cfg["current_age"] + 1, 85,
+            min(max(int(cfg.get("target_retirement_age", 65)), cfg["current_age"] + 1), 85),
+            help="Used for success rate, risk paths, and career planning.",
+        )
+        cfg["annual_spending"] = st.number_input(
+            "Annual spending ($)",
+            0, 500_000,
+            int(cfg.get("annual_spending", DEFAULT_CFG["annual_spending"])),
+            help="Pre-inflation spending from retirement onward.",
+        )
+        if advanced_mode:
+            cfg["inflation_rate"] = st.slider(
+                "Inflation", 0.0, 0.1, float(cfg["inflation_rate"]),
             )
-            essentials_portfolio = st.number_input(
-                "Portfolio today ($)", 0, 10_000_000, int(cfg["starting_amount"]),
-            )
-            essentials_savings = st.number_input(
-                "Annual savings ($)", 0, 500_000, int(cfg["annual_contribution"]),
-            )
-            essentials_target = st.number_input(
-                "Target retirement age",
-                essentials_age + 1, 85,
-                int(cfg.get("target_retirement_age", 65)),
-                help="Used for success rate, risk paths, and career planning.",
-            )
-            essentials_spending = st.number_input(
-                "Annual spending ($)",
-                0, 500_000,
-                int(cfg.get("annual_spending", DEFAULT_CFG["annual_spending"])),
-                help="Pre-inflation spending from retirement onward.",
-            )
-            essentials_inflation = cfg["inflation_rate"]
-            essentials_reduction = cfg.get("spending_reduction_after_75", 0.0)
-            if advanced_mode:
-                essentials_inflation = st.slider(
-                    "Inflation", 0.0, 0.1, float(cfg["inflation_rate"]),
-                )
-                reduction_pct = int(round(float(cfg.get("spending_reduction_after_75", 0.0)) * 100))
-                essentials_reduction = st.slider(
-                    "Lower spending after 75 (%)",
-                    0, 50,
-                    reduction_pct,
-                    step=5,
-                    help="Reduce annual spending by this percentage from age 75 onward.",
-                ) / 100.0
-            if st.form_submit_button("Apply changes", width="stretch"):
-                cfg["current_age"] = essentials_age
-                cfg["starting_amount"] = essentials_portfolio
-                cfg["annual_contribution"] = essentials_savings
-                cfg["target_retirement_age"] = essentials_target
-                cfg["annual_spending"] = essentials_spending
-                if advanced_mode:
-                    cfg["inflation_rate"] = essentials_inflation
-                    cfg["spending_reduction_after_75"] = essentials_reduction
-                save_cfg(cfg)
-                st.rerun()
+            reduction_pct = int(round(float(cfg.get("spending_reduction_after_75", 0.0)) * 100))
+            cfg["spending_reduction_after_75"] = st.slider(
+                "Lower spending after 75 (%)",
+                0, 50,
+                reduction_pct,
+                step=5,
+                help="Reduce annual spending by this percentage from age 75 onward.",
+            ) / 100.0
 
     target_retirement_age = int(cfg.get("target_retirement_age", 65))
 
@@ -1803,6 +1796,24 @@ with main_body.container():
         build_verdict_subline(target_prob, best_levers),
         status=insight_status(target_prob, on_track),
     )
+
+    top_lever = best_levers[0] if best_levers else None
+    if (
+        top_lever
+        and delta_pts(top_lever.get("delta")) not in (None, 0)
+        and top_lever.get("overrides")
+    ):
+        lever_pts = delta_pts(top_lever["delta"])
+        at_target = target_prob is not None and target_prob >= SUCCESS_THRESHOLD
+        lever_verb = "Add margin" if at_target else "Apply best lever"
+        if st.button(
+            f"{lever_verb}: {top_lever['Change']} ({lever_pts:+d} pts)",
+            key="apply_best_lever",
+            width="stretch",
+        ):
+            cfg.update(top_lever["overrides"])
+            save_cfg(cfg)
+            st.rerun()
 
     render_kpi_row(
         target_age=target_age,
