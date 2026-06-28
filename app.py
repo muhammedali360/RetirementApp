@@ -28,6 +28,7 @@ from model import (
     find_min_years_worked,
     guardrail_income_band,
     simulate_net_worth,
+    social_security_claim_comparison,
     social_security_start_age,
 )
 from report import (
@@ -228,7 +229,23 @@ DEFAULT_CFG = {
     "active_profile": DEFAULT_PROFILE,
     "show_real_values": False,
     "withdrawal_strategy": "fixed",
+    # Part-time "bridge" income during early retirement — off by default; only
+    # surfaced as a suggested lever when a plan is at risk (see the bridge card).
+    "bridge_income": 0,
+    "bridge_end_age": None,
 }
+
+# A plan is treated as "near retirement" when the person is already in their late
+# 50s+ or only a handful of years from their target age. For this group the
+# accumulation framing (coast number, earliest-safe-age) is the wrong lead — they
+# care about their guaranteed income floor and how much they can safely spend.
+NEAR_RETIREMENT_AGE = 55
+NEAR_RETIREMENT_WINDOW = 7
+
+
+def is_near_retirement(cfg, target_age):
+    years_until = target_age - cfg["current_age"]
+    return cfg["current_age"] >= NEAR_RETIREMENT_AGE or years_until <= NEAR_RETIREMENT_WINDOW
 
 GLOSSARY = {
     "Success rate": "Share of Monte Carlo trials where your portfolio stays positive through your planning horizon.",
@@ -237,6 +254,9 @@ GLOSSARY = {
     "Sequence-of-returns risk": "Bad market returns early in retirement can permanently reduce portfolio durability.",
     "Planning horizon": "The age through which the model checks whether your money lasts (default: 100).",
     "Return assumptions": "Returns are modeled on a broad stock-market index like the S&P 500 — annual returns are drawn from a log-normal distribution whose average and volatility you set via the preset (or the Market sliders in advanced mode).",
+    "Guaranteed income": "Inflation-adjusted income you receive for life regardless of markets — here, your Social Security benefit at your chosen claim age. It's the floor your plan is built on top of.",
+    "Safe spend": f"The largest total annual budget that still clears ≥{SUCCESS_THRESHOLD_PCT}% success at your target age — what your savings can sustain on top of guaranteed income.",
+    "Bridge income": "Part-time earnings during early retirement that cover some spending so you can delay drawing your portfolio (and delay claiming Social Security for a bigger benefit).",
 }
 
 
@@ -360,6 +380,33 @@ def build_verdict_subline(target_prob, best_levers):
     return f"{prefix}: {top['Change']} ({pts:+d} pts)."
 
 
+def build_verdict_near_retiree(target_age, ss_floor, ss_claim_age, safe_spend):
+    """Lead with the floor + safe budget for someone close to (or in) retirement.
+
+    'Earliest safe age' is the wrong headline this late — it's usually irrelevant
+    or None for the under-saved. What matters is the guaranteed income they'll
+    have for life and how much, realistically, they can spend on top of it.
+    """
+    parts = []
+    if ss_floor and ss_claim_age:
+        parts.append(
+            f"Social Security gives you a guaranteed {format_currency(ss_floor)}/yr "
+            f"for life from age {ss_claim_age}."
+        )
+    if safe_spend:
+        lead = "On top of that, your" if parts else "Your"
+        parts.append(
+            f"{lead} savings can safely support about {format_currency(safe_spend)}/yr "
+            f"of total spending retiring at {target_age}."
+        )
+    else:
+        parts.append(
+            f"At age {target_age} your savings add little on their own — part-time work "
+            "or claiming Social Security later would do the heavy lifting."
+        )
+    return " ".join(parts)
+
+
 def render_verdict(headline, subline, status="neutral"):
     sub_html = f'<p class="verdict-sub">{subline}</p>' if subline else ""
     st.markdown(
@@ -406,44 +453,74 @@ def render_hero(
     )
 
 
+def _kpi_card(label, value, value_cls, tooltip):
+    return (
+        f'<div class="kpi-card">'
+        f'<div class="kpi-label" title="{tooltip}">{label}<span class="kpi-info">ⓘ</span></div>'
+        f'<div class="kpi-value {value_cls}">{value}</div>'
+        f"</div>"
+    )
+
+
 def render_kpi_row(
     *,
     target_age,
     target_prob,
     ranges,
     withdrawal_rate,
+    near_retiree=False,
+    ss_floor=None,
+    ss_claim_age=None,
+    safe_spend=None,
 ):
     prob_val = f"{target_prob * 100:.0f}%" if target_prob is not None else "—"
     prob_cls = prob_semantic_class(target_prob)
-    earliest = str(ranges[0][0]) if ranges else "None"
-    if ranges and ranges[0][0] <= target_age:
-        earliest_cls = "good"
-    elif ranges:
-        earliest_cls = "neutral"
+    cards = [_kpi_card(
+        f"Success rate · age {target_age}", prob_val, prob_cls, GLOSSARY["Success rate"],
+    )]
+
+    if near_retiree:
+        # Lead with the two questions a near-retiree actually asks: what income is
+        # guaranteed for life, and how much can I safely spend — not "earliest
+        # safe age," which is usually irrelevant (or None) this close to the exit.
+        if ss_floor:
+            floor_val = f"{format_currency(ss_floor)}<span class='kpi-unit'>/yr</span>"
+            floor_cls = "good"
+            floor_label = (
+                f"Guaranteed income · from {ss_claim_age}" if ss_claim_age
+                else "Guaranteed income"
+            )
+        else:
+            floor_val, floor_cls, floor_label = "None", "warn", "Guaranteed income"
+        cards.append(_kpi_card(floor_label, floor_val, floor_cls, GLOSSARY["Guaranteed income"]))
+
+        if safe_spend:
+            spend_val = f"{format_currency(safe_spend)}<span class='kpi-unit'>/yr</span>"
+            spend_cls = "neutral"
+        else:
+            spend_val, spend_cls = "—", "warn"
+        cards.append(_kpi_card(
+            f"Safe spend · age {target_age}", spend_val, spend_cls, GLOSSARY["Safe spend"],
+        ))
     else:
-        earliest_cls = "warn"
-    wr_val = f"{withdrawal_rate * 100:.1f}%" if withdrawal_rate is not None else "—"
-    wr_cls = withdrawal_semantic_class(withdrawal_rate)
+        earliest = str(ranges[0][0]) if ranges else "None"
+        if ranges and ranges[0][0] <= target_age:
+            earliest_cls = "good"
+        elif ranges:
+            earliest_cls = "neutral"
+        else:
+            earliest_cls = "warn"
+        cards.append(_kpi_card(
+            "Earliest safe age", earliest, earliest_cls, GLOSSARY["Earliest safe age"],
+        ))
+        wr_val = f"{withdrawal_rate * 100:.1f}%" if withdrawal_rate is not None else "—"
+        wr_cls = withdrawal_semantic_class(withdrawal_rate)
+        cards.append(_kpi_card(
+            f"Withdrawal rate · age {target_age}", wr_val, wr_cls, GLOSSARY["Withdrawal rate"],
+        ))
 
     st.markdown(
-        f"""
-        <div class="kpi-sticky">
-            <div class="kpi-grid">
-                <div class="kpi-card">
-                    <div class="kpi-label" title="{GLOSSARY['Success rate']}">Success rate · age {target_age}<span class="kpi-info">ⓘ</span></div>
-                    <div class="kpi-value {prob_cls}">{prob_val}</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label" title="{GLOSSARY['Earliest safe age']}">Earliest safe age<span class="kpi-info">ⓘ</span></div>
-                    <div class="kpi-value {earliest_cls}">{earliest}</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label" title="{GLOSSARY['Withdrawal rate']}">Withdrawal rate · age {target_age}<span class="kpi-info">ⓘ</span></div>
-                    <div class="kpi-value {wr_cls}">{wr_val}</div>
-                </div>
-            </div>
-        </div>
-        """,
+        f'<div class="kpi-sticky"><div class="kpi-grid">{"".join(cards)}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -512,6 +589,145 @@ def render_safe_spend(safe_spend, current_spend, target_age, withdrawal_rate, ba
         f"</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_ss_timing(comparison, ss_success, plan_claim_age, target_age):
+    """Side-by-side 'when to claim Social Security' comparison.
+
+    For each candidate claim age it shows the monthly check, the lifetime total
+    in today's dollars, and the plan's success rate if you claim then — so the
+    single biggest lever for an under-saved retiree is a real, clickable choice.
+    Returns the claim age the user chose to switch to, or None.
+    """
+    if not comparison:
+        return None
+    lo, hi = comparison[0], comparison[-1]
+    cols = st.columns(len(comparison))
+    apply_choice = None
+    for col, row in zip(cols, comparison):
+        claim = row["claim_age"]
+        is_plan = claim == plan_claim_age
+        succ = ss_success.get(claim)
+        succ_txt = f"{succ * 100:.0f}%" if succ is not None else "—"
+        succ_cls = prob_semantic_class(succ)
+        badge = ""
+        if is_plan:
+            badge = '<span class="ss-badge plan">Your plan</span>'
+        elif claim == hi["claim_age"]:
+            badge = '<span class="ss-badge best">Biggest check</span>'
+        with col:
+            st.markdown(
+                f'<div class="ss-card {"plan" if is_plan else ""}">'
+                f'<div class="ss-claim">Claim at {claim}{badge}</div>'
+                f'<div class="ss-monthly">{format_currency(row["monthly"])}'
+                f'<span class="ss-unit">/mo</span></div>'
+                f'<div class="ss-detail">{format_currency(row["annual"])}/yr · '
+                f'lifetime {format_currency(row["lifetime"])}</div>'
+                f'<div class="ss-detail">Plan success: '
+                f'<span class="ss-succ {succ_cls}">{succ_txt}</span></div>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            if is_plan:
+                st.button("Current plan", key=f"ss_apply_{claim}", disabled=True, width="stretch")
+            elif st.button(f"Switch to {claim}", key=f"ss_apply_{claim}", width="stretch"):
+                apply_choice = claim
+
+    if lo["monthly"] > 0:
+        pct = (hi["monthly"] / lo["monthly"] - 1) * 100
+        msg = (
+            f"Delaying from {lo['claim_age']} to {hi['claim_age']} raises your monthly "
+            f"check about {pct:.0f}% — guaranteed and inflation-adjusted for life."
+        )
+        s_lo, s_hi = ss_success.get(lo["claim_age"]), ss_success.get(hi["claim_age"])
+        if s_lo is not None and s_hi is not None and abs(s_hi - s_lo) >= 0.01:
+            direction = "lifts" if s_hi >= s_lo else "lowers"
+            msg += (
+                f" For this plan it {direction} success at {target_age} from "
+                f"{s_lo * 100:.0f}% to {s_hi * 100:.0f}% (claiming later means more "
+                "years drawing the portfolio before benefits start)."
+            )
+        st.caption(msg)
+    return apply_choice
+
+
+def render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age):
+    """Conditional 'could part-time work bridge the gap?' lever.
+
+    Only shown when a plan is at risk (or a bridge is already set), never as a
+    default input. Part-time income during early retirement covers some spending
+    so the portfolio keeps compounding and Social Security can be claimed later.
+    Returns overrides to apply (or None).
+    """
+    bridge_active = float(cfg.get("bridge_income") or 0) > 0
+    ss_claim = social_security_start_age(cfg)
+    horizon_cap = min(75, int(cfg["max_age"]))
+    end_hi = max(target_age + 2, horizon_cap)
+    default_end = ss_claim if (ss_claim and target_age < ss_claim <= end_hi) else min(target_age + 5, end_hi)
+    default_end = int(min(max(int(cfg.get("bridge_end_age") or default_end), target_age + 1), end_hi))
+    # Keep the default on the slider's 5K grid and within range.
+    raw_income = int(cfg.get("bridge_income") or 0) or 20_000
+    default_income = int(min(60_000, max(0, round(raw_income / 5_000) * 5_000)))
+
+    st.markdown(
+        '<div class="bridge-card">'
+        '<div class="signal-header">'
+        '<span class="signal-dot neutral"></span>'
+        '<span class="signal-label">Could part-time work bridge the gap?</span>'
+        "</div>"
+        '<p class="bridge-intro">Working part-time for a few years into retirement lets '
+        'your savings keep growing instead of being drawn down — and lets you delay '
+        'Social Security for a bigger check. Try it without committing:</p>',
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    income = c1.slider(
+        "Part-time income ($/yr)", 0, 60_000, value=default_income, step=5_000,
+        key="bridge_income_slider",
+        help=GLOSSARY["Bridge income"],
+    )
+    end_age = c2.slider(
+        "Work part-time until age", target_age + 1, end_hi, value=default_end,
+        key="bridge_end_slider",
+        help="Bridge income runs from your retirement age until this age.",
+    )
+
+    base_variant = dict(cfg, bridge_income=0, bridge_end_age=None)
+    base_ages, base_probs = cached_model(
+        "curve", cfg_cache_key(base_variant),
+        json.dumps({"age_start": cfg["current_age"], "age_end": max_eval_age,
+                    "mean_return": mean_return, "volatility": volatility, "seed": None}),
+    )
+    base_prob = prob_at_age(base_ages, base_probs, target_age)
+
+    if income > 0:
+        variant = dict(cfg, bridge_income=income, bridge_end_age=end_age)
+        v_ages, v_probs = cached_model(
+            "curve", cfg_cache_key(variant),
+            json.dumps({"age_start": cfg["current_age"], "age_end": max_eval_age,
+                        "mean_return": mean_return, "volatility": volatility, "seed": None}),
+        )
+        new_prob = prob_at_age(v_ages, v_probs, target_age)
+        if new_prob is not None and base_prob is not None:
+            pts = round((new_prob - base_prob) * 100)
+            delta_txt = (
+                f'<span class="up">+{pts} pts</span>' if pts > 0
+                else f'<span class="flat">{pts:+d} pts</span>'
+            )
+            st.markdown(
+                f'<p class="bridge-preview">{format_currency(income)}/yr until age '
+                f"{end_age}: success at {target_age} goes "
+                f'<b>{base_prob * 100:.0f}% → {new_prob * 100:.0f}%</b> {delta_txt}.</p>',
+                unsafe_allow_html=True,
+            )
+
+    overrides = None
+    b1, b2 = st.columns(2)
+    if b1.button("Apply to plan", key="bridge_apply", width="stretch", disabled=income == 0):
+        overrides = {"bridge_income": int(income), "bridge_end_age": int(end_age)}
+    if bridge_active and b2.button("Remove bridge income", key="bridge_remove", width="stretch"):
+        overrides = {"bridge_income": 0, "bridge_end_age": None}
+    return overrides
 
 
 def coast_state(coast, current_portfolio, target_age):
@@ -1777,6 +1993,30 @@ optimizer_lines = build_optimizer_lines(
     cfg["years_already_worked"], years_until_retirement,
 )
 
+# Persona + Social Security framing. Near-retirees lead with their guaranteed
+# income floor and safe budget rather than accumulation metrics; the SS claim
+# comparison powers the timing section and that floor KPI.
+near_retiree = is_near_retirement(cfg, target_age)
+ss_on = cfg.get("include_social_security", True)
+ss_claim_age = social_security_start_age(cfg)
+ss_comparison = social_security_claim_comparison(cfg, target_age) if ss_on else []
+ss_floor = next(
+    (r["annual"] for r in ss_comparison if r["claim_age"] == ss_claim_age), 0.0
+)
+ss_success = {}
+if ss_on:
+    for row in ss_comparison:
+        variant_cfg = dict(cfg, social_security_claim_age=row["claim_age"])
+        v_ages, v_probs = cached_model(
+            "curve",
+            cfg_cache_key(variant_cfg),
+            json.dumps({"age_start": cfg["current_age"], "age_end": max_eval_age, **model_args}),
+        )
+        ss_success[row["claim_age"]] = prob_at_age(v_ages, v_probs, target_age)
+
+bridge_active = float(cfg.get("bridge_income") or 0) > 0
+plan_at_risk = target_prob is None or target_prob < SUCCESS_THRESHOLD
+
 with main_body.container():
     render_hero(
         current_age=cfg["current_age"],
@@ -1790,11 +2030,23 @@ with main_body.container():
     for warning in input_warnings:
         st.warning(warning)
 
+    if near_retiree:
+        verdict_headline = build_verdict_near_retiree(
+            target_age, ss_floor, ss_claim_age, safe_spend,
+        )
+    else:
+        verdict_headline = build_verdict(target_prob, target_age, cfg["max_age"], ranges)
     render_verdict(
-        build_verdict(target_prob, target_age, cfg["max_age"], ranges),
+        verdict_headline,
         build_verdict_subline(target_prob, best_levers),
         status=insight_status(target_prob, on_track),
     )
+
+    if bridge_active:
+        st.caption(
+            f"This plan includes {format_currency(cfg['bridge_income'])}/yr of part-time "
+            f"income until age {cfg['bridge_end_age']} — adjust it on the Plan tab."
+        )
 
     top_lever = best_levers[0] if best_levers else None
     if (
@@ -1819,6 +2071,10 @@ with main_body.container():
         target_prob=target_prob,
         ranges=ranges,
         withdrawal_rate=withdrawal_rate,
+        near_retiree=near_retiree,
+        ss_floor=ss_floor if ss_on else None,
+        ss_claim_age=ss_claim_age,
+        safe_spend=safe_spend,
     )
 
     tab_plan, tab_whatif, tab_coast, tab_compare, tab_export = st.tabs(
@@ -1838,6 +2094,37 @@ with main_body.container():
             safe_spend_wr,
             band=spend_band,
         )
+
+        # Social Security timing — the single biggest lever for the under-saved.
+        # Prominent (open) for near-retirees; tucked in an expander otherwise.
+        if ss_on and ss_comparison:
+            def _ss_timing_body():
+                choice = render_ss_timing(ss_comparison, ss_success, ss_claim_age, target_age)
+                if choice is not None:
+                    cfg["social_security_claim_age"] = choice
+                    save_cfg(cfg)
+                    st.rerun()
+
+            if near_retiree:
+                show_section(
+                    "Social Security timing — when to claim",
+                    "Your claim age sets a guaranteed, inflation-adjusted income for life. "
+                    "Claiming later means a bigger monthly check — often the highest-impact "
+                    "choice when savings are thin.",
+                )
+                _ss_timing_body()
+            else:
+                with st.expander("Social Security timing — when to claim", expanded=False):
+                    _ss_timing_body()
+
+        # Part-time bridge income — surfaced only when the plan is at risk (or a
+        # bridge is already set), never as a default sidebar input.
+        if plan_at_risk or bridge_active:
+            bridge_overrides = render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age)
+            if bridge_overrides is not None:
+                cfg.update(bridge_overrides)
+                save_cfg(cfg)
+                st.rerun()
 
         show_section(
             "Success probability curve",

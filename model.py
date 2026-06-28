@@ -31,6 +31,8 @@ SPEND_CEILING_MULT = 1.25
 MODEL_CFG_FIELDS = (
     "annual_contribution",
     "annual_spending",
+    "bridge_income",
+    "bridge_end_age",
     "current_age",
     "include_social_security",
     "inflation_rate",
@@ -88,6 +90,26 @@ def guardrail_income_band(cfg, base=None):
 
 
 # -------------------------
+# BRIDGE (PART-TIME) INCOME
+# -------------------------
+def bridge_income_params(cfg):
+    """Part-time income that offsets spending from retirement until `bridge_end_age`.
+
+    The classic "bridge to Social Security": instead of drawing the portfolio in
+    the early-retirement / pre-claim years, part-time work covers some spending,
+    letting the balance keep compounding (and letting Social Security be claimed
+    later for a bigger benefit). Returns ``(annual_income, end_age)`` and is inert
+    — ``(0.0, None)`` — unless a positive income and an end age are both set, so
+    every existing plan is unchanged.
+    """
+    income = float(cfg.get("bridge_income", 0.0) or 0.0)
+    end_age = cfg.get("bridge_end_age")
+    if income <= 0 or end_age is None:
+        return 0.0, None
+    return income, int(end_age)
+
+
+# -------------------------
 # SOCIAL SECURITY
 # -------------------------
 def ss_claim_adjustment(claim_age):
@@ -141,6 +163,36 @@ def social_security_start_age(cfg):
     return cfg.get("social_security_claim_age", cfg.get("social_security_start_age", 67))
 
 
+def social_security_claim_comparison(cfg, retirement_age, claim_ages=(62, 67, 70), longevity=90):
+    """Compare claiming Social Security at each `claim_ages` for this plan.
+
+    For someone with little invested, *when* to claim is the single biggest
+    lever: a later claim trades fewer years of benefits for a permanently larger
+    (and COLA-protected) monthly check. Benefit size scales with work history
+    (capped at 35 years), evaluated at `retirement_age` — claiming later than you
+    retire does not add work years — so only the claim-age adjustment varies here.
+
+    Returns a list of dicts (one per claim age), each with the annual and monthly
+    benefit, the number of years it is received by `longevity`, and the resulting
+    real (today's-dollar) lifetime total. The COLA keeps each year's benefit at
+    constant real value, so the lifetime total is simply annual × years received.
+    """
+    years_worked = cfg["years_already_worked"] + max(retirement_age - cfg["current_age"], 0)
+    max_benefit = cfg.get("ss_max_benefit", DEFAULT_SS_MAX_BENEFIT)
+    results = []
+    for claim_age in claim_ages:
+        annual = compute_social_security(years_worked, claim_age, max_benefit)
+        years_receiving = max(longevity - claim_age, 0)
+        results.append({
+            "claim_age": claim_age,
+            "annual": annual,
+            "monthly": annual / 12.0,
+            "years_receiving": years_receiving,
+            "lifetime": annual * years_receiving,
+        })
+    return results
+
+
 # -------------------------
 # RETURN MODEL (log-normal)
 # -------------------------
@@ -155,7 +207,7 @@ def generate_returns(mean_return, volatility, trials, n_years, seed=None):
 # -------------------------
 # VECTORIZED MONTE CARLO
 # -------------------------
-def _spending_matrix(retirement_ages, current_age, max_age, inflation_rate, ss_start_age, ss_incomes, spending_by_age):
+def _spending_matrix(retirement_ages, current_age, max_age, inflation_rate, ss_start_age, ss_incomes, spending_by_age, bridge_income=0.0, bridge_end_age=None):
     calendar_ages = np.arange(current_age, max_age + 1)
     ages = np.asarray(retirement_ages, dtype=np.int64)
 
@@ -173,6 +225,14 @@ def _spending_matrix(retirement_ages, current_age, max_age, inflation_rate, ss_s
         ss_active = calendar_ages[None, :] >= ss_start_age
         ss_offset = ss_incomes[:, None] * ((1 + inflation_rate) ** yrs_since)
         spending = np.maximum(spending - np.where(ss_active, ss_offset, 0.0), 0.0)
+
+    if bridge_income > 0 and bridge_end_age is not None:
+        # Part-time income covers spending only while retired and before the
+        # bridge ends; it inflates with a COLA like SS so its real value holds
+        # over the (usually short) bridge window.
+        bridge_active = retired & (calendar_ages[None, :] < bridge_end_age)
+        bridge_offset = bridge_income * ((1 + inflation_rate) ** yrs_since)
+        spending = np.maximum(spending - np.where(bridge_active, bridge_offset, 0.0), 0.0)
     return spending
 
 
@@ -209,11 +269,21 @@ def _guardrail_inputs(cfg, retirement_ages, ss_incomes=None):
     else:
         ss_off = np.zeros_like(gross)
 
+    # Part-time bridge income is a fixed real floor (like SS), not flexed by the
+    # guardrail multiplier — it covers spending only while retired and pre-bridge.
+    bridge_income, bridge_end_age = bridge_income_params(cfg)
+    if bridge_income > 0 and bridge_end_age is not None:
+        bridge_active = retired & (calendar_ages[None, :] < bridge_end_age)
+        bridge_off = bridge_income * ((1 + inflation) ** yrs_since)
+        bridge_off = np.where(bridge_active, bridge_off, 0.0)
+    else:
+        bridge_off = np.zeros_like(gross)
+
     contribute = np.where(
         calendar_ages[None, :] < ages[:, None], cfg["annual_contribution"], 0.0,
     )
     is_retire_year = calendar_ages[None, :] == ages[:, None]
-    return calendar_ages, gross, ss_off, contribute, retired, is_retire_year
+    return calendar_ages, gross, ss_off, bridge_off, contribute, retired, is_retire_year
 
 
 def _simulate_guardrails(cfg, retirement_ages, returns, ss_incomes=None, collect_paths=False):
@@ -225,7 +295,7 @@ def _simulate_guardrails(cfg, retirement_ages, returns, ss_incomes=None, collect
     shape (trials, ages, years) — or None when not requested, to avoid the
     allocation on the success-curve path that only needs survival.
     """
-    calendar_ages, gross, ss_off, contribute, retired, is_retire_year = _guardrail_inputs(
+    calendar_ages, gross, ss_off, bridge_off, contribute, retired, is_retire_year = _guardrail_inputs(
         cfg, retirement_ages, ss_incomes,
     )
     n_trials = returns.shape[0]
@@ -251,10 +321,11 @@ def _simulate_guardrails(cfg, retirement_ages, returns, ss_incomes=None, collect
         if retired_i.any():
             gross_i = gross[:, i][None, :]
             ss_i = ss_off[:, i][None, :]
+            bridge_i = bridge_off[:, i][None, :]
             retire_year_i = is_retire_year[:, i][None, :]
 
             # Withdrawal rate at the current spend level vs. the current balance.
-            withdrawal = np.maximum(gross_i * spend_mult - ss_i, 0.0)
+            withdrawal = np.maximum(gross_i * spend_mult - ss_i - bridge_i, 0.0)
             wr = withdrawal / np.maximum(net, 1.0)
 
             # Lock the anchor rate the first retired year, then flex against it.
@@ -274,7 +345,7 @@ def _simulate_guardrails(cfg, retirement_ages, returns, ss_incomes=None, collect
             spend_mult = np.clip(spend_mult, SPEND_FLOOR_MULT, SPEND_CEILING_MULT)
 
             # Re-derive the withdrawal after any adjustment, then deduct it.
-            withdrawal = np.maximum(gross_i * spend_mult - ss_i, 0.0)
+            withdrawal = np.maximum(gross_i * spend_mult - ss_i - bridge_i, 0.0)
             spend_active = retired_i[None, :] & alive
             net = np.where(spend_active, net - withdrawal, net)
             alive &= ~(spend_active & (net <= 0))
@@ -304,6 +375,7 @@ def _simulate_trial_paths(cfg, retirement_age, returns, ss_income=None):
         years_worked = cfg["years_already_worked"] + (retirement_age - current_age)
         ss_income = social_security_income(cfg, years_worked)
 
+    bridge_income, bridge_end_age = bridge_income_params(cfg)
     spending = _spending_matrix(
         np.array([retirement_age], dtype=np.int64),
         current_age,
@@ -312,6 +384,8 @@ def _simulate_trial_paths(cfg, retirement_age, returns, ss_income=None):
         social_security_start_age(cfg),
         np.array([ss_income], dtype=np.float64),
         spending_by_age,
+        bridge_income=bridge_income,
+        bridge_end_age=bridge_end_age,
     )[0]
 
     calendar_ages = np.arange(current_age, max_age + 1)
@@ -373,8 +447,10 @@ def _simulate_all_retirement_ages(cfg, retirement_ages, returns):
     years_worked = cfg["years_already_worked"] + (ages - current_age)
     ss_incomes = social_security_income_batch(cfg, years_worked)
 
+    bridge_income, bridge_end_age = bridge_income_params(cfg)
     spending = _spending_matrix(
         ages, current_age, max_age, inflation, ss_start, ss_incomes, spending_by_age,
+        bridge_income=bridge_income, bridge_end_age=bridge_end_age,
     )
 
     contribute = np.where(
@@ -656,6 +732,7 @@ def simulate_net_worth(cfg, retirement_age, return_rate):
     years_worked = cfg["years_already_worked"] + (retirement_age - current_age)
     ss_income = social_security_income(cfg, years_worked)
     ss_start = social_security_start_age(cfg)
+    bridge_income, bridge_end_age = bridge_income_params(cfg)
 
     spending_array = build_spending_array(cfg)
 
@@ -680,6 +757,11 @@ def simulate_net_worth(cfg, retirement_age, return_rate):
             if ss_start is not None and age >= ss_start:
                 # SS benefit inflates with a COLA, matching the spending path.
                 spending -= ss_income * ((1 + cfg["inflation_rate"]) ** yrs)
+                spending = max(0, spending)
+
+            if bridge_income > 0 and bridge_end_age is not None and age < bridge_end_age:
+                # Part-time income offsets spending during the bridge window.
+                spending -= bridge_income * ((1 + cfg["inflation_rate"]) ** yrs)
                 spending = max(0, spending)
 
             net_worth -= spending

@@ -132,8 +132,8 @@ The main page shows, in order:
 
 1. **Hero** — app title, status badge (On track / Close / At risk), and chips for active profile, age range, and portfolio size
 2. **Input warnings** — e.g. withdrawal rate above 5%, target age not after current age, or very low savings with no contributions
-3. **Signal** — plain-language summary of your plan, including best what-if levers when relevant
-4. **KPIs** — success probability at target age, earliest safe age, and withdrawal rate at target age
+3. **Signal** — plain-language summary of your plan, including best what-if levers when relevant. **Near retirees** (age 55+ or within ~7 years of their target age) get a reframed verdict that leads with their guaranteed Social Security income floor and the total budget their savings can safely support, instead of an "earliest safe age" that is often irrelevant this close to the exit.
+4. **KPIs** — success probability at target age, then either *earliest safe age* + *withdrawal rate* (accumulators) or *guaranteed income* + *safe spend/yr* (near retirees)
 5. **Sustainable spending** — the largest annual budget that still clears the success threshold at your target age, with its implied withdrawal rate and a status-aware delta vs. your plan (headroom when you can spend more, trim-to-target when you are over)
 6. **Success probability curve** — Monte Carlo success vs. retirement age, with a **Chart ends at age** slider to zoom the x-axis and a **Download chart PNG** button
 7. **Safe-age summary** — message below the curve when any age reaches ≥90% success (with an SS note if the earliest safe age aligns with your claim age)
@@ -142,11 +142,30 @@ The main page shows, in order:
 
 Below the result cards, the main page splits into tabs:
 
-10. **Plan** — everything in items 5–9 above
+10. **Plan** — everything in items 5–9 above, plus the **Social Security timing** comparison and (when at risk) the **part-time bridge income** lever described below
 11. **What-if** — quick scenario changes without editing the sidebar
 12. **Coast** — the Coast number: the smallest portfolio you'd need *today* that, left untouched (no contributions, no withdrawals), still grows enough to retire on time, compared to what you have now (see section 3)
 13. **Compare** — overlay saved plans or profile presets
 14. **Export** — JSON config and PDF report
+
+### Social Security timing (Plan tab)
+
+A side-by-side comparison of claiming at **62 / 67 / 70**, built for the case where Social Security is the backbone of the plan (common when little is invested). For each claim age it shows:
+
+- the **monthly check**,
+- the **lifetime total** in today's dollars (benefits received through age 90), and
+- your plan's **success rate** if you claim then.
+
+One-click **Switch to** buttons fold a claim age into the plan. The section is shown **prominently for near retirees** (age 55+ or within ~7 years of the target age) and tucked in a collapsible expander otherwise. Delaying always raises the monthly check (about +8%/yr of delayed credits to 70); for an under-funded plan it can *lower* near-term success, because more years are spent drawing down the portfolio before benefits begin — the comparison surfaces that trade-off rather than hiding it. Benefit size still scales with work history (capped at 35 years) and is evaluated at your retirement age.
+
+### Part-time bridge income (Plan tab)
+
+A suggested lever that appears **only when the plan is at risk** (success below the threshold) or a bridge is already set — never as a default sidebar input. It models part-time earnings during early retirement that cover some spending, so the portfolio keeps compounding instead of being drawn down (and Social Security can be delayed for a bigger benefit) — the classic "bridge to Social Security."
+
+- Set a **part-time income** and the **age you'd work until**; a live preview shows the success lift at your target age.
+- **Apply to plan** folds the bridge into every chart, KPI, and the success curve; **Remove bridge income** clears it.
+
+In the model, bridge income runs from your retirement age until the chosen end age, offsetting spending each year (with a COLA, like Social Security) so its real value holds over the bridge window. It defaults to off, so every existing plan is unchanged.
 
 ### 3. Coast number
 

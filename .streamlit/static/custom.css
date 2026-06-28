@@ -135,6 +135,12 @@ html, body, [class*="css"] {
 .kpi-value.good { color: #34d399; }
 .kpi-value.neutral { color: #fbbf24; }
 .kpi-value.warn { color: #f87171; }
+.kpi-unit {
+    font-size: 0.62em;
+    font-weight: 600;
+    color: #a3a3a3;
+    margin-left: 0.12em;
+}
 .kpi-delta {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.72rem;
@@ -366,6 +372,78 @@ html, body, [class*="css"] {
 .safespend-delta.good { color: #34d399; }
 .safespend-delta.warn { color: #f87171; }
 .safespend-delta.neutral { color: #a3a3a3; }
+
+/* Social Security claim-age comparison cards */
+.ss-card {
+    background: rgba(22, 22, 22, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 0.8rem 0.9rem 0.85rem;
+    margin-bottom: 0.5rem;
+    min-height: 6.6rem;
+}
+.ss-card.plan {
+    border-color: rgba(236, 72, 153, 0.55);
+    background: rgba(236, 72, 153, 0.06);
+}
+.ss-claim {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #d4d4d4;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.ss-badge {
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 0.08rem 0.42rem;
+}
+.ss-badge.plan { background: rgba(236, 72, 153, 0.18); color: #f9a8d4; }
+.ss-badge.best { background: rgba(52, 211, 153, 0.16); color: #6ee7b7; }
+.ss-monthly {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fafafa;
+    line-height: 1.1;
+    margin-top: 0.3rem;
+}
+.ss-unit { font-size: 0.7rem; font-weight: 500; color: #737373; margin-left: 0.15rem; }
+.ss-detail {
+    font-size: 0.72rem;
+    color: #a3a3a3;
+    margin-top: 0.28rem;
+    font-variant-numeric: tabular-nums;
+}
+.ss-succ { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+.ss-succ.good { color: #34d399; }
+.ss-succ.neutral { color: #fbbf24; }
+.ss-succ.warn { color: #f87171; }
+
+/* Part-time bridge income lever */
+.bridge-card {
+    background: rgba(22, 22, 22, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-left: 3px solid #fbbf24;
+    border-radius: 12px;
+    padding: 0.95rem 1.15rem 1.05rem;
+    margin-bottom: 1rem;
+}
+.bridge-intro { font-size: 0.86rem; color: #a3a3a3; line-height: 1.5; margin: 0; }
+.bridge-preview {
+    font-size: 0.9rem;
+    color: #e5e5e5;
+    margin-top: 0.2rem;
+    font-variant-numeric: tabular-nums;
+}
+.bridge-preview .up { color: #34d399; font-weight: 600; }
+.bridge-preview .flat { color: #a3a3a3; }
 
 /* Coast progress bar */
 .coast-progress {
