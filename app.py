@@ -1709,7 +1709,6 @@ saved_scenarios = load_saved_scenarios()
 
 with st.sidebar:
     st.markdown("### Parameters")
-    st.caption("Select a profile preset, then fine-tune inputs.")
 
     profile_names = list(PRESET_PROFILES.keys())
     active = cfg.get("active_profile")
@@ -1752,7 +1751,6 @@ with st.sidebar:
     cfg["withdrawal_strategy"] = "guardrails" if smart_spending else "fixed"
 
     with st.expander("Essentials", expanded=True):
-        st.caption("Changes apply instantly.")
         cfg["current_age"] = st.number_input(
             "Current age", 18, 80, int(cfg["current_age"]),
         )
@@ -2147,9 +2145,8 @@ with main_body.container():
 
         if curve_overlay is not None:
             st.caption(
-                "The dashed line is the same plan with fixed inflation-only spending. "
-                "Smart spending lifts the odds by trimming withdrawals after market "
-                "downturns — at the cost of a leaner budget in those years."
+                "The dashed line is the same plan with fixed inflation-only spending — "
+                "smart spending lifts the odds by trimming withdrawals after downturns."
             )
 
         if ranges:
@@ -2206,10 +2203,7 @@ with main_body.container():
             on_track=on_track,
         )
 
-        st.caption(
-            f"Based on {trial_count:,} Monte Carlo trials per retirement age. "
-            "Results are cached — rerunning with the same inputs is fast."
-        )
+        st.caption(f"Based on {trial_count:,} Monte Carlo trials per retirement age.")
 
     with tab_whatif:
         show_section(
@@ -2222,10 +2216,6 @@ with main_body.container():
             cfg.update(applied)
             save_cfg(cfg)
             st.rerun()
-        st.caption(
-            "Each row reruns Monte Carlo with one parameter change. "
-            "Click Apply to load a scenario into the sidebar."
-        )
 
     with tab_coast:
         show_section(
@@ -2252,9 +2242,7 @@ with main_body.container():
                 coast_fig, file_name="coast_growth.png", label="Download coast chart",
             )
             st.caption(
-                "Both lines grow at your expected return. The dashed line is the coast "
-                "number compounding untouched to the retirement nest egg; the solid line "
-                "is today's balance plus your contributions. Where they meet is the age "
+                "Both lines grow at your expected return; where they meet is the age "
                 "you could stop saving and let the rest ride."
             )
             render_coast_compounding(coast_number, coast_line[-1], target_age)
