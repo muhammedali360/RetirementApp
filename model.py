@@ -38,9 +38,7 @@ MODEL_CFG_FIELDS = (
     "inflation_rate",
     "max_age",
     "social_security_claim_age",
-    "social_security_start_age",
     "spending_reduction_after_75",
-    "spending_under_75",
     "ss_max_benefit",
     "starting_amount",
     "trials",
@@ -64,10 +62,6 @@ def build_spending_array(cfg):
         base if age < 75 else reduced
         for age in range(150)
     ], dtype=np.float64)
-
-
-def get_spending(age, cfg):
-    return float(build_spending_array(cfg)[age])
 
 
 def withdrawal_strategy(cfg):
@@ -141,26 +135,35 @@ def compute_social_security_batch(years_worked, claim_age, max_benefit=DEFAULT_S
     return base * ss_claim_adjustment(claim_age)
 
 
-def social_security_income(cfg, years_worked):
-    if not cfg.get("include_social_security", True):
-        return 0.0
+def _ss_params(cfg):
+    """(enabled, claim_age, max_benefit) for the configured Social Security.
+
+    Reads the current ``social_security_claim_age`` and falls back to the legacy
+    ``social_security_start_age`` so pre-migration callers still resolve.
+    """
+    enabled = cfg.get("include_social_security", True)
     claim_age = cfg.get("social_security_claim_age", cfg.get("social_security_start_age", 67))
     max_benefit = cfg.get("ss_max_benefit", DEFAULT_SS_MAX_BENEFIT)
+    return enabled, claim_age, max_benefit
+
+
+def social_security_income(cfg, years_worked):
+    enabled, claim_age, max_benefit = _ss_params(cfg)
+    if not enabled:
+        return 0.0
     return compute_social_security(years_worked, claim_age, max_benefit)
 
 
 def social_security_income_batch(cfg, years_worked):
-    if not cfg.get("include_social_security", True):
+    enabled, claim_age, max_benefit = _ss_params(cfg)
+    if not enabled:
         return np.zeros_like(np.asarray(years_worked, dtype=np.float64), dtype=np.float64)
-    claim_age = cfg.get("social_security_claim_age", cfg.get("social_security_start_age", 67))
-    max_benefit = cfg.get("ss_max_benefit", DEFAULT_SS_MAX_BENEFIT)
     return compute_social_security_batch(years_worked, claim_age, max_benefit)
 
 
 def social_security_start_age(cfg):
-    if not cfg.get("include_social_security", True):
-        return None
-    return cfg.get("social_security_claim_age", cfg.get("social_security_start_age", 67))
+    enabled, claim_age, _ = _ss_params(cfg)
+    return claim_age if enabled else None
 
 
 def social_security_claim_comparison(cfg, retirement_age, claim_ages=(62, 67, 70), longevity=90):

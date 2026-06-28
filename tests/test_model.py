@@ -39,13 +39,6 @@ def test_build_spending_array_with_reduction(cfg):
     assert arr[120] == pytest.approx(80_000)
 
 
-def test_get_spending_matches_array(cfg):
-    cfg["annual_spending"] = 100_000
-    cfg["spending_reduction_after_75"] = 0.10
-    assert model.get_spending(70, cfg) == 100_000
-    assert model.get_spending(80, cfg) == pytest.approx(90_000)
-
-
 # -------------------------
 # SOCIAL SECURITY
 # -------------------------

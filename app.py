@@ -703,8 +703,7 @@ def render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age):
     base_variant = dict(cfg, bridge_income=0, bridge_end_age=None)
     base_ages, base_probs = cached_model(
         "curve", cfg_cache_key(base_variant),
-        json.dumps({"age_start": cfg["current_age"], "age_end": max_eval_age,
-                    "mean_return": mean_return, "volatility": volatility, "seed": None}),
+        curve_args(cfg, mean_return, volatility, max_eval_age),
     )
     base_prob = prob_at_age(base_ages, base_probs, target_age)
 
@@ -712,8 +711,7 @@ def render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age):
         variant = dict(cfg, bridge_income=income, bridge_end_age=end_age)
         v_ages, v_probs = cached_model(
             "curve", cfg_cache_key(variant),
-            json.dumps({"age_start": cfg["current_age"], "age_end": max_eval_age,
-                        "mean_return": mean_return, "volatility": volatility, "seed": None}),
+            curve_args(cfg, mean_return, volatility, max_eval_age),
         )
         new_prob = prob_at_age(v_ages, v_probs, target_age)
         if new_prob is not None and base_prob is not None:
@@ -767,33 +765,27 @@ def render_coast(coast, current_portfolio, target_age):
     balance so the user knows whether they can downshift now or how far they
     have left.
     """
-    if coast is None:
-        status, message = coast_state(coast, current_portfolio, target_age)
-        st.markdown(
-            f'<div class="safespend-card {status}">'
-            f'<div class="signal-header">'
-            f'<span class="signal-dot {status}"></span>'
-            f'<span class="signal-label">Coast number</span>'
-            f'<span class="safespend-conf">{SUCCESS_THRESHOLD_PCT}% confidence</span>'
-            f"</div>"
-            f'<div class="safespend-delta {status}">{message}</div>'
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        return
     status, message = coast_state(coast, current_portfolio, target_age)
+    if coast is None:
+        conf = f"{SUCCESS_THRESHOLD_PCT}% confidence"
+        body = ""
+    else:
+        conf = f"{SUCCESS_THRESHOLD_PCT}% confidence · grows untouched"
+        body = (
+            f'<div class="safespend-value">{format_currency(coast)}</div>'
+            f'<div class="safespend-sub">balance that, left untouched (no contributions, '
+            f"no withdrawals), still funds retirement at age {target_age} "
+            f'<span class="safespend-sep">·</span> '
+            f"you have {format_currency(current_portfolio)} today</div>"
+        )
     st.markdown(
         f'<div class="safespend-card {status}">'
         f'<div class="signal-header">'
         f'<span class="signal-dot {status}"></span>'
         f'<span class="signal-label">Coast number</span>'
-        f'<span class="safespend-conf">{SUCCESS_THRESHOLD_PCT}% confidence · grows untouched</span>'
+        f'<span class="safespend-conf">{conf}</span>'
         f"</div>"
-        f'<div class="safespend-value">{format_currency(coast)}</div>'
-        f'<div class="safespend-sub">balance that, left untouched (no contributions, '
-        f"no withdrawals), still funds retirement at age {target_age} "
-        f'<span class="safespend-sep">·</span> '
-        f"you have {format_currency(current_portfolio)} today</div>"
+        f"{body}"
         f'<div class="safespend-delta {status}">{message}</div>'
         f"</div>",
         unsafe_allow_html=True,
@@ -947,13 +939,7 @@ def run_what_if_scenarios(base_cfg, base_prob, target_age, mean_return, volatili
         ages, probs = cached_model(
             "curve",
             variant_key,
-            json.dumps({
-                "age_start": variant_cfg["current_age"],
-                "age_end": min(85, variant_cfg["max_age"]),
-                "mean_return": mean_return,
-                "volatility": volatility,
-                "seed": None,
-            }),
+            curve_args(variant_cfg, mean_return, volatility, min(85, variant_cfg["max_age"])),
         )
         variant_age = variant_cfg["target_retirement_age"]
         prob = prob_at_age(ages, probs, variant_age)
@@ -1291,13 +1277,7 @@ def load_comparison_runs(saved_scenarios, compare_names, current_run=None):
         s_ages, s_probs = cached_model(
             "curve",
             s_key,
-            json.dumps({
-                "age_start": scfg["current_age"],
-                "age_end": min(85, scfg["max_age"]),
-                "mean_return": mean_return,
-                "volatility": volatility,
-                "seed": None,
-            }),
+            curve_args(scfg, mean_return, volatility, min(85, scfg["max_age"])),
         )
         runs.append((entry["name"], s_ages, s_probs))
     return runs
@@ -1312,13 +1292,7 @@ def load_preset_comparison_runs(preset_names):
         s_ages, s_probs = cached_model(
             "curve",
             p_key,
-            json.dumps({
-                "age_start": pcfg["current_age"],
-                "age_end": min(85, pcfg["max_age"]),
-                "mean_return": pcfg["mean_return"],
-                "volatility": pcfg["volatility"],
-                "seed": None,
-            }),
+            curve_args(pcfg, pcfg["mean_return"], pcfg["volatility"], min(85, pcfg["max_age"])),
         )
         runs.append((f"Preset: {name}", s_ages, s_probs))
     return runs
@@ -1334,6 +1308,21 @@ def cfg_cache_key(cfg):
     # show_real_values, advanced_mode, active_profile) don't bust the cache.
     model_cfg = {k: cfg[k] for k in MODEL_CFG_FIELDS if k in cfg}
     return json.dumps(model_cfg, sort_keys=True)
+
+
+def curve_args(cfg, mean_return, volatility, age_end, seed=None):
+    """Serialized args for a ``cached_model("curve", ...)` call.
+
+    The success curve always starts at the plan's current age; callers pass the
+    upper age bound (the eval horizon, or a capped display max).
+    """
+    return json.dumps({
+        "age_start": cfg["current_age"],
+        "age_end": age_end,
+        "mean_return": mean_return,
+        "volatility": volatility,
+        "seed": seed,
+    })
 
 
 @st.cache_data(show_spinner=False)
@@ -1925,11 +1914,7 @@ with st.spinner(f"Running {trial_count:,} Monte Carlo trials…"):
     ages, probs = cached_model(
         "curve",
         cfg_key,
-        json.dumps({
-            "age_start": cfg["current_age"],
-            "age_end": max_eval_age,
-            **model_args,
-        }),
+        curve_args(cfg, mean_return, volatility, max_eval_age),
     )
     min_years = cached_model(
         "min_years",
@@ -1966,11 +1951,7 @@ if smart_spending_on:
     fixed_ages, fixed_probs = cached_model(
         "curve",
         cfg_cache_key(fixed_cfg),
-        json.dumps({
-            "age_start": cfg["current_age"],
-            "age_end": max_eval_age,
-            **model_args,
-        }),
+        curve_args(cfg, mean_return, volatility, max_eval_age),
     )
 
 ranges = safe_retirement_ranges(ages, probs)
@@ -2018,7 +1999,7 @@ if ss_on:
         v_ages, v_probs = cached_model(
             "curve",
             cfg_cache_key(variant_cfg),
-            json.dumps({"age_start": cfg["current_age"], "age_end": max_eval_age, **model_args}),
+            curve_args(cfg, mean_return, volatility, max_eval_age),
         )
         ss_success[row["claim_age"]] = prob_at_age(v_ages, v_probs, target_age)
 

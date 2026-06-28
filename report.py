@@ -5,7 +5,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
-from model import SUCCESS_THRESHOLD, SUCCESS_THRESHOLD_PCT
+from model import SUCCESS_THRESHOLD, SUCCESS_THRESHOLD_PCT, _annual_spending
 
 
 def delta_pts(delta):
@@ -130,7 +130,7 @@ def build_executive_summary(
 
 
 def _spending_summary(cfg):
-    base = cfg.get("annual_spending", cfg.get("spending_under_75", 200_000))
+    base = _annual_spending(cfg)
     reduction = cfg.get("spending_reduction_after_75", 0.0)
     if reduction > 0:
         return f"${base:,.0f}/yr ( −{reduction * 100:.0f}% after 75)"
