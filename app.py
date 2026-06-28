@@ -144,6 +144,14 @@ def format_currency(value):
     return f"${value:,.0f}"
 
 
+def format_money(value):
+    """Full-precision dollars (e.g. $1,700) for human-scale figures — a monthly
+    check or annual income — where rounding to $1K/$2K hides the detail that
+    matters (and can make two different amounts look identical). Use
+    format_currency for big-picture portfolio / lifetime sums."""
+    return f"${value:,.0f}"
+
+
 def prob_at_age(ages, probs, target_age):
     ages = np.asarray(ages)
     probs = np.asarray(probs)
@@ -390,13 +398,13 @@ def build_verdict_near_retiree(target_age, ss_floor, ss_claim_age, safe_spend):
     parts = []
     if ss_floor and ss_claim_age:
         parts.append(
-            f"Social Security gives you a guaranteed {format_currency(ss_floor)}/yr "
+            f"Social Security gives you a guaranteed {format_money(ss_floor)}/yr "
             f"for life from age {ss_claim_age}."
         )
     if safe_spend:
         lead = "On top of that, your" if parts else "Your"
         parts.append(
-            f"{lead} savings can safely support about {format_currency(safe_spend)}/yr "
+            f"{lead} savings can safely support about {format_money(safe_spend)}/yr "
             f"of total spending retiring at {target_age}."
         )
     else:
@@ -484,7 +492,7 @@ def render_kpi_row(
         # guaranteed for life, and how much can I safely spend — not "earliest
         # safe age," which is usually irrelevant (or None) this close to the exit.
         if ss_floor:
-            floor_val = f"{format_currency(ss_floor)}<span class='kpi-unit'>/yr</span>"
+            floor_val = f"{format_money(ss_floor)}<span class='kpi-unit'>/yr</span>"
             floor_cls = "good"
             floor_label = (
                 f"Guaranteed income · from {ss_claim_age}" if ss_claim_age
@@ -495,7 +503,7 @@ def render_kpi_row(
         cards.append(_kpi_card(floor_label, floor_val, floor_cls, GLOSSARY["Guaranteed income"]))
 
         if safe_spend:
-            spend_val = f"{format_currency(safe_spend)}<span class='kpi-unit'>/yr</span>"
+            spend_val = f"{format_money(safe_spend)}<span class='kpi-unit'>/yr</span>"
             spend_cls = "neutral"
         else:
             spend_val, spend_cls = "—", "warn"
@@ -619,9 +627,9 @@ def render_ss_timing(comparison, ss_success, plan_claim_age, target_age):
             st.markdown(
                 f'<div class="ss-card {"plan" if is_plan else ""}">'
                 f'<div class="ss-claim">Claim at {claim}{badge}</div>'
-                f'<div class="ss-monthly">{format_currency(row["monthly"])}'
+                f'<div class="ss-monthly">{format_money(row["monthly"])}'
                 f'<span class="ss-unit">/mo</span></div>'
-                f'<div class="ss-detail">{format_currency(row["annual"])}/yr · '
+                f'<div class="ss-detail">{format_money(row["annual"])}/yr · '
                 f'lifetime {format_currency(row["lifetime"])}</div>'
                 f'<div class="ss-detail">Plan success: '
                 f'<span class="ss-succ {succ_cls}">{succ_txt}</span></div>'
@@ -715,7 +723,7 @@ def render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age):
                 else f'<span class="flat">{pts:+d} pts</span>'
             )
             st.markdown(
-                f'<p class="bridge-preview">{format_currency(income)}/yr until age '
+                f'<p class="bridge-preview">{format_money(income)}/yr until age '
                 f"{end_age}: success at {target_age} goes "
                 f'<b>{base_prob * 100:.0f}% → {new_prob * 100:.0f}%</b> {delta_txt}.</p>',
                 unsafe_allow_html=True,
@@ -2044,7 +2052,7 @@ with main_body.container():
 
     if bridge_active:
         st.caption(
-            f"This plan includes {format_currency(cfg['bridge_income'])}/yr of part-time "
+            f"This plan includes {format_money(cfg['bridge_income'])}/yr of part-time "
             f"income until age {cfg['bridge_end_age']} — adjust it on the Plan tab."
         )
 
