@@ -1519,10 +1519,6 @@ with st.sidebar:
             save_cfg(cfg)
             st.rerun()
 
-    with st.expander("Definitions", expanded=False):
-        for term, definition in GLOSSARY.items():
-            st.markdown(f"**{term}** — {definition}")
-
     st.divider()
     advanced_mode = st.toggle(
         "Advanced parameters",
@@ -1635,7 +1631,10 @@ with st.sidebar:
 
     if advanced_mode:
         with st.expander("More options", expanded=False):
-            cfg["max_age"] = st.number_input("Planning horizon (max age)", 70, 110, int(cfg["max_age"]))
+            cfg["max_age"] = st.number_input(
+                "Planning horizon (max age)", 70, 110, int(cfg["max_age"]),
+                help=GLOSSARY["Planning horizon"],
+            )
 
     st.divider()
     st.markdown("**Save scenario**")

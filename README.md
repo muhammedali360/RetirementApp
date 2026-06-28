@@ -66,9 +66,9 @@ Pick a **profile preset** (Early, Mid, or Pre-retire) to load realistic defaults
 | **Target retirement age** | Age used for success rate, fan chart, and career planning |
 | **Annual spending** | Pre-inflation spending from retirement onward |
 
-Most other sidebar controls (presets, Social Security, market settings) rerun the simulation as soon as you change them. Only **Essentials** requires **Apply changes**.
+All sidebar controls (Essentials, presets, Social Security, market settings) rerun the simulation as soon as you change them.
 
-Open **Definitions** for a glossary of terms (success rate, earliest safe age, withdrawal rate, sequence-of-returns risk, planning horizon).
+Key terms are explained inline where they appear — hover the ⓘ on the success-rate, earliest-safe-age, and withdrawal-rate KPIs, and the tooltips/captions on the planning-horizon and market inputs.
 
 Toggle **Advanced parameters** to expose inflation, lower spending after 75, custom market assumptions, and planning horizon.
 
