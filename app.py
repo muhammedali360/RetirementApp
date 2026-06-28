@@ -127,9 +127,16 @@ def apply_chart_style():
             "grid.color": THEME["grid"],
             "grid.alpha": 0.22,
             "grid.linestyle": "-",
-            "font.size": 10,
-            "axes.titlesize": 12,
+            # Sizes run large because the charts render to a PNG that scales down
+            # to the container width — on a phone that's ~360px, so generous base
+            # sizes keep labels legible instead of shrinking to a few pixels.
+            "font.size": 12,
+            "axes.titlesize": 14,
             "axes.titleweight": "600",
+            "axes.labelsize": 12,
+            "xtick.labelsize": 11,
+            "ytick.labelsize": 11,
+            "legend.fontsize": 10,
             "legend.framealpha": 0.92,
             "legend.edgecolor": THEME["grid"],
         }
@@ -966,30 +973,33 @@ def run_what_if_scenarios(base_cfg, base_prob, target_age, mean_return, volatili
 
 
 def render_what_if_table(rows, best_levers):
+    # Self-contained cards rather than a column-grid "table": Streamlit stacks
+    # st.columns vertically on narrow (mobile) viewports, which would shred a
+    # shared-header table into an unaligned jumble. Each card describes itself,
+    # and the Apply button sits inline on desktop / full-width below on mobile.
     best_labels = {row["Change"] for row in best_levers}
-    col_weights = [3.5, 2, 2, 1.5]
-    header = st.columns(col_weights, vertical_alignment="center")
-    header[0].markdown("**Scenario**")
-    header[1].markdown("**Success rate @ target**")
-    header[2].markdown("**Change vs plan**")
-    header[3].markdown("")
-
+    applied = None
     for row in rows:
         delta_text, delta_dir = format_delta_arrow(row.get("delta"))
-        row_class = "what-if-row-label best" if row["Change"] in best_labels else "what-if-row-label"
-        cols = st.columns(col_weights, vertical_alignment="center")
-        cols[0].markdown(
-            f'<span class="{row_class}">{row["Change"]}</span>',
+        is_best = row["Change"] in best_labels
+        card_cls = "whatif-card best" if is_best else "whatif-card"
+        badge = '<span class="whatif-best-badge">Best lever</span>' if is_best else ""
+        info_col, btn_col = st.columns([4, 1], vertical_alignment="center")
+        info_col.markdown(
+            f'<div class="{card_cls}">'
+            f'<div class="whatif-scenario">{row["Change"]}{badge}</div>'
+            f'<div class="whatif-stats">'
+            f'<span class="whatif-success mono">{row["Success @ target"]}</span>'
+            f'<span class="whatif-statlabel">success at target</span>'
+            f'<span class="whatif-delta delta-{delta_dir}">{delta_text}</span>'
+            f"</div></div>",
             unsafe_allow_html=True,
         )
-        cols[1].markdown(f'<span class="mono">{row["Success @ target"]}</span>', unsafe_allow_html=True)
-        cols[2].markdown(
-            f'<span class="delta-{delta_dir}">{delta_text}</span>',
-            unsafe_allow_html=True,
-        )
-        if cols[3].button("Apply", key=f"what_if_apply_{row['id']}"):
-            return row["overrides"]
-    return None
+        if btn_col.button(
+            "Apply", key=f"what_if_apply_{row['id']}", use_container_width=True
+        ):
+            applied = row["overrides"]
+    return applied
 
 
 def render_comparison_legend(comparison_runs):
@@ -1443,7 +1453,7 @@ def plot_success_curve(
     apply_chart_style()
     ages = np.asarray(ages)
     probs = np.asarray(probs)
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
     chart_mask = (ages >= start_age) & (ages <= end_age)
     chart_ages = ages[chart_mask]
     chart_probs = probs[chart_mask]
@@ -1484,7 +1494,7 @@ def plot_success_curve(
                 xy=(highlight_age, prob_at_target),
                 xytext=(8, 10),
                 textcoords="offset points",
-                fontsize=9,
+                fontsize=11,
                 color=THEME["accent"],
                 fontweight="600",
             )
@@ -1504,7 +1514,7 @@ def plot_success_curve(
                 xy=(earliest_safe_age, prob_at_earliest),
                 xytext=(8, -14),
                 textcoords="offset points",
-                fontsize=8,
+                fontsize=10,
                 color=THEME["success"],
             )
     ax.set_xlabel("Retirement Age")
@@ -1512,14 +1522,14 @@ def plot_success_curve(
     ax.set_title("Will your money last if you retire at this age?", pad=12)
     ax.set_ylim(0, 1.08)
     ax.grid(True, alpha=0.22)
-    ax.legend(loc="lower right", fontsize=8, frameon=True)
+    ax.legend(loc="lower right", fontsize=10, frameon=True)
     fig.tight_layout()
     return fig
 
 
 def plot_fan_chart(calendar_ages, pct_values, title, *, real_values=False, det_overlay=None):
     apply_chart_style()
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
     calendar_ages = np.asarray(calendar_ages)
     p10 = np.asarray(pct_values[10])
     p50 = np.asarray(pct_values[50])
@@ -1545,7 +1555,7 @@ def plot_fan_chart(calendar_ages, pct_values, title, *, real_values=False, det_o
             xy=(depletion_age, 0),
             xytext=(10, 18),
             textcoords="offset points",
-            fontsize=8,
+            fontsize=10,
             color=THEME["danger"],
             arrowprops={"arrowstyle": "->", "color": THEME["danger"], "lw": 0.8},
         )
@@ -1568,14 +1578,14 @@ def plot_fan_chart(calendar_ages, pct_values, title, *, real_values=False, det_o
     ax.set_title(title)
     dollar_axis(ax)
     ax.grid(True, alpha=0.22)
-    ax.legend(fontsize=8, frameon=True)
+    ax.legend(fontsize=10, frameon=True)
     fig.tight_layout()
     return fig
 
 
 def plot_scenario_comparison(comparison_runs):
     apply_chart_style()
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
     for i, (name, ages, probs) in enumerate(comparison_runs):
         color = CHART_PALETTE[i % len(CHART_PALETTE)]
         ax.plot(np.asarray(ages), np.asarray(probs), linewidth=2.2, label=name, color=color)
@@ -1585,7 +1595,7 @@ def plot_scenario_comparison(comparison_runs):
     ax.set_title("Scenario Comparison · Monte Carlo")
     ax.set_ylim(0, 1.02)
     ax.grid(True, alpha=0.22)
-    ax.legend(fontsize=8, frameon=True)
+    ax.legend(fontsize=10, frameon=True)
     fig.tight_layout()
     return fig
 
@@ -1598,7 +1608,7 @@ def plot_coast_growth(ages, coast_line, portfolio_line, coast_age, current_age, 
     they cross is the age saving becomes optional — shaded green beyond it.
     """
     apply_chart_style()
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
     ages = np.asarray(ages)
     coast_line = np.asarray(coast_line)
     portfolio_line = np.asarray(portfolio_line)
@@ -1628,7 +1638,7 @@ def plot_coast_growth(ages, coast_line, portfolio_line, coast_age, current_age, 
             xy=(coast_age, portfolio_line[idx]),
             xytext=(10, -16 if coast_age <= current_age else 12),
             textcoords="offset points",
-            fontsize=9,
+            fontsize=11,
             color=THEME["success"],
             fontweight="600",
         )
@@ -1639,7 +1649,7 @@ def plot_coast_growth(ages, coast_line, portfolio_line, coast_age, current_age, 
     ax.set_ylim(bottom=0)
     dollar_axis(ax)
     ax.grid(True, alpha=0.22)
-    ax.legend(loc="upper left", fontsize=8, frameon=True)
+    ax.legend(loc="upper left", fontsize=10, frameon=True)
     fig.tight_layout()
     return fig
 

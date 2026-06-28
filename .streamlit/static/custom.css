@@ -693,13 +693,55 @@ html, body, [class*="css"] {
 .skeleton-kpi { height: 4.5rem; }
 .skeleton-chart { height: 18rem; }
 
-/* What-if table */
-.what-if-row-label {
-    white-space: nowrap;
+/* What-if scenario cards (responsive — replaces the old column grid) */
+.whatif-card {
+    background: rgba(22, 22, 22, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 0.7rem 0.9rem;
 }
-.what-if-row-label.best {
-    color: #34d399;
+.whatif-card.best {
+    border-color: rgba(52, 211, 153, 0.35);
+    background: rgba(52, 211, 153, 0.05);
+}
+.whatif-scenario {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.95rem;
     font-weight: 600;
+    color: #fafafa;
+}
+.whatif-best-badge {
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 0.08rem 0.42rem;
+    background: rgba(52, 211, 153, 0.16);
+    color: #6ee7b7;
+}
+.whatif-stats {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.35rem;
+}
+.whatif-success {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #fafafa;
+}
+.whatif-statlabel {
+    font-size: 0.72rem;
+    color: #737373;
+}
+.whatif-delta {
+    font-size: 0.85rem;
+    margin-left: auto;
 }
 .mono {
     font-family: 'JetBrains Mono', monospace;
@@ -842,4 +884,51 @@ body:has(.chart-fs-toggle:checked) {
     color: #ec4899;
     border-color: rgba(236, 72, 153, 0.6);
     background: rgba(30, 30, 30, 0.95);
+}
+
+/* ============================================================
+   Mobile — phones and narrow viewports
+   ============================================================ */
+@media (max-width: 640px) {
+    /* Reclaim horizontal space for charts and cards */
+    .block-container {
+        padding-top: 0.85rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+
+    /* Hero stacks instead of cramming title + status + chips on one line */
+    .hero-title { font-size: 1.12rem; }
+    .hero-header { gap: 0.45rem; }
+    .hero-chips {
+        margin-left: 0;
+        width: 100%;
+        gap: 0.4rem;
+    }
+
+    /* 5 tabs won't fit side by side — make the bar swipe horizontally
+       instead of wrapping into a broken two-row pile */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.5rem;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
+    .stTabs [data-baseweb="tab"] {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        font-size: 0.88rem;
+    }
+
+    /* Headline numbers: trim so they don't overflow their cards */
+    .kpi-value { font-size: 1.28rem; }
+    .safespend-value { font-size: 2rem; }
+    .ss-monthly { font-size: 1.3rem; }
+
+    /* Roomier tap targets */
+    .stButton button { min-height: 2.6rem; }
+
+    /* What-if Apply button: full width when the column stacks under the card */
+    .whatif-delta { margin-left: 0; }
 }
