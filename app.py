@@ -1711,9 +1711,10 @@ def build_optimizer_lines(target_age, min_years, baseline_career_years, years_al
 # -------------------------
 # UI
 # -------------------------
+_FAVICON = Path(__file__).parent / "assets" / "favicon.png"
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon="◆",
+    page_icon=str(_FAVICON) if _FAVICON.exists() else "📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
