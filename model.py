@@ -316,9 +316,13 @@ def _simulate_guardrails(cfg, retirement_ages, returns, ss_incomes=None, collect
         if collect_paths else None
     )
 
+    # Dead trials only flip `alive` off and are zeroed at path recording, so
+    # their evolving net is never read by a live decision (every use of `net`
+    # below is gated on `alive`/`spend_active`). Grow it in place to avoid two
+    # full (trials x ages) allocations per year.
     for i in range(n_years):
-        net = np.where(alive, net + contribute[:, i], net)
-        net = np.where(alive, net * (1.0 + returns[:, i:i + 1]), net)
+        net += contribute[:, i]
+        net *= 1.0 + returns[:, i:i + 1]
 
         retired_i = retired[:, i]
         if retired_i.any():
@@ -398,11 +402,14 @@ def _simulate_trial_paths(cfg, retirement_age, returns, ss_income=None):
     net = np.full(trials, cfg["starting_amount"], dtype=np.float64)
     alive = np.ones(trials, dtype=bool)
 
+    # `alive` is monotone and dead trials are zeroed at recording time, so a
+    # depleted trial's evolving net is never observed. Evolve `net` in place and
+    # gate only the path write, dropping three per-year full-array allocations.
     for i in range(n_years):
-        net = np.where(alive, net + contribute[i], net)
-        net = np.where(alive, net * (1.0 + returns[:, i]), net)
+        net += contribute[i]
+        net *= 1.0 + returns[:, i]
         if spending[i] > 0:
-            net = np.where(alive, net - spending[i], net)
+            net -= spending[i]
             alive &= net > 0
         paths[:, i] = np.where(alive, net, 0.0)
 
@@ -463,11 +470,16 @@ def _simulate_all_retirement_ages(cfg, retirement_ages, returns):
     net = np.full((returns.shape[0], len(ages)), cfg["starting_amount"], dtype=np.float64)
     alive = np.ones((returns.shape[0], len(ages)), dtype=bool)
 
+    # Dead trials only ever flip `alive` off (the survival mask is monotone), and
+    # only `alive` is returned — so a depleted trial's net value is never read
+    # again. That lets us evolve `net` in place for every trial instead of
+    # gating each update behind `np.where(alive, ...)`, which allocated two full
+    # (trials x ages) arrays per year.
     for i in range(n_years):
-        net = np.where(alive, net + contribute[:, i], net)
-        net = np.where(alive, net * (1.0 + returns[:, i:i + 1]), net)
+        net += contribute[:, i]
+        net *= 1.0 + returns[:, i:i + 1]
         if spending[:, i].any():
-            net = np.where(alive, net - spending[:, i], net)
+            net -= spending[:, i]
             alive &= net > 0
 
     return alive.mean(axis=0)
