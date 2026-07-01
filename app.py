@@ -716,7 +716,8 @@ def render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age):
     base_variant = dict(cfg, bridge_income=0, bridge_end_age=None)
     base_ages, base_probs = cached_model(
         "curve", cfg_cache_key(base_variant),
-        curve_args(cfg, mean_return, volatility, max_eval_age),
+        # Only prob at target_age is read, so simulate that single age.
+        curve_args(cfg, mean_return, volatility, target_age, age_start=target_age),
     )
     base_prob = prob_at_age(base_ages, base_probs, target_age)
 
@@ -724,7 +725,7 @@ def render_bridge_card(cfg, target_age, mean_return, volatility, max_eval_age):
         variant = dict(cfg, bridge_income=income, bridge_end_age=end_age)
         v_ages, v_probs = cached_model(
             "curve", cfg_cache_key(variant),
-            curve_args(cfg, mean_return, volatility, max_eval_age),
+            curve_args(cfg, mean_return, volatility, target_age, age_start=target_age),
         )
         new_prob = prob_at_age(v_ages, v_probs, target_age)
         if new_prob is not None and base_prob is not None:
@@ -949,12 +950,15 @@ def run_what_if_scenarios(base_cfg, base_prob, target_age, mean_return, volatili
         variant_cfg = base_cfg.copy()
         variant_cfg.update(overrides)
         variant_key = cfg_cache_key(variant_cfg)
+        variant_age = variant_cfg["target_retirement_age"]
         ages, probs = cached_model(
             "curve",
             variant_key,
-            curve_args(variant_cfg, mean_return, volatility, min(85, variant_cfg["max_age"])),
+            # Only prob_at_age(variant_age) is read below, so simulate that one age.
+            curve_args(
+                variant_cfg, mean_return, volatility, variant_age, age_start=variant_age,
+            ),
         )
-        variant_age = variant_cfg["target_retirement_age"]
         prob = prob_at_age(ages, probs, variant_age)
         delta = (prob - base_prob) if prob is not None and base_prob is not None else None
         rows.append({
@@ -1326,14 +1330,18 @@ def cfg_cache_key(cfg):
     return json.dumps(model_cfg, sort_keys=True)
 
 
-def curve_args(cfg, mean_return, volatility, age_end, seed=None):
+def curve_args(cfg, mean_return, volatility, age_end, seed=None, age_start=None):
     """Serialized args for a ``cached_model("curve", ...)` call.
 
-    The success curve always starts at the plan's current age; callers pass the
-    upper age bound (the eval horizon, or a capped display max).
+    The success curve normally starts at the plan's current age; callers pass the
+    upper age bound (the eval horizon, or a capped display max). Callers that
+    only read the probability at a single retirement age (what-if rows, the SS
+    claim comparison, the bridge preview) can pass ``age_start == age_end`` to
+    simulate just that one age — the sim is vectorized across ages, so a 1-wide
+    curve costs a fraction of the full 30–50-age fan for the same result.
     """
     return json.dumps({
-        "age_start": cfg["current_age"],
+        "age_start": cfg["current_age"] if age_start is None else age_start,
         "age_end": age_end,
         "mean_return": mean_return,
         "volatility": volatility,
@@ -2015,7 +2023,8 @@ if ss_on:
         v_ages, v_probs = cached_model(
             "curve",
             cfg_cache_key(variant_cfg),
-            curve_args(cfg, mean_return, volatility, max_eval_age),
+            # Only prob at target_age is read, so simulate that single age.
+            curve_args(cfg, mean_return, volatility, target_age, age_start=target_age),
         )
         ss_success[row["claim_age"]] = prob_at_age(v_ages, v_probs, target_age)
 
