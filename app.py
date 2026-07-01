@@ -193,8 +193,8 @@ PRESET_PROFILES = {
     "Early": {
         "tagline": "Building your foundation",
         "current_age": 28,
-        "starting_amount": 45_000,
-        "annual_contribution": 15_000,
+        "starting_amount": 70_000,
+        "annual_contribution": 18_000,
         "target_retirement_age": 65,
         "annual_spending": 72_000,
         "spending_reduction_after_75": 0.17,
